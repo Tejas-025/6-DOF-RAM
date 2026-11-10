@@ -2,7 +2,6 @@
 
 An end-to-end, physics-grounded 3D Digital Twin and closed-loop process control platform for automated Robotic Additive Manufacturing (RAM). The system models industrial **Formlabs Form 4L/3L (Low Force Stereolithography - SLA)** and **Formlabs Fuse 1+ 30W (Selective Laser Sintering - SLS)** stations integrated with an industrial 6-DOF articulated manipulator maintaining a calibrated $150\text{ mm}$ coaxial inspection standoff.
 
-![System Architecture](https://raw.githubusercontent.com/username/repo/main/docs/assets/system_architecture.png)
 
 ## Core Capabilities
 

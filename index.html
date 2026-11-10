@@ -1,0 +1,2563 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>6-DOF Robotic SLA & SLS Digital Twin with Closed-Loop Dual-Actuator PID Control</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js r128 for 3D WebGL Digital Twin -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- =====================================================================
+       MODULE 1: STYLESHEET (styles.css)
+       ===================================================================== -->
+  <style id="digital-twin-styles">
+    :root {
+      --bg-primary: #070b14;
+      --bg-panel: #0f172a;
+      --bg-card: #1e293b;
+      --accent-sla: #06b6d4;
+      --accent-sls: #f97316;
+      --accent-pid: #10b981;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      overflow-x: hidden;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Custom Range Sliders */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 5px;
+      background: #334155;
+      border-radius: 999px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"].sla-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #06b6d4;
+      border: 2px solid #ecfeff;
+      box-shadow: 0 0 8px rgba(6, 182, 212, 0.85);
+      cursor: pointer;
+      transition: transform 0.12s ease;
+    }
+    input[type="range"].sls-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #f97316;
+      border: 2px solid #fff7ed;
+      box-shadow: 0 0 8px rgba(249, 115, 22, 0.85);
+      cursor: pointer;
+      transition: transform 0.12s ease;
+    }
+    input[type="range"].pid-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #10b981;
+      border: 2px solid #ecfdf5;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.85);
+      cursor: pointer;
+      transition: transform 0.12s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.18);
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    .glass-hud {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .dsp-grid-canvas {
+      width: 100%;
+      height: 225px;
+      display: block;
+      background: #060911;
+      border-radius: 0.5rem;
+      cursor: crosshair;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-cyan-500 selection:text-slate-950">
+
+  <!-- =====================================================================
+       TOP NAVIGATION, DUAL-MODE SWITCHER & EXPORT SUITE
+       ===================================================================== -->
+  <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-3 sm:px-5 py-2.5">
+    <div class="max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      <!-- Brand & Title -->
+      <div class="flex items-center gap-3">
+        <div id="modeBadgeIcon" class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 font-bold mono text-xs shadow-inner">
+          6-DOF
+        </div>
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <h1 class="text-sm sm:text-base font-bold tracking-tight text-white">
+              Robotic Additive Manufacturing Digital Twin — Closed-Loop PID Control
+            </h1>
+            <span id="pidHeaderBadge" class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 mono">
+              ● DUAL-ACTUATOR PID LOCKED (Cd* = 145.0 µm)
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400">
+            KUKA KR 6 R900 (DH + DLS IK, d_hold = 150 mm) • Formlabs Form 4L/3L (SLA) &amp; Fuse 1+ 30W (SLS) • 50-Layer Cylinder (D = 40 mm)
+          </p>
+        </div>
+      </div>
+
+      <!-- Dual-Mode Switcher (SLA vs SLS) -->
+      <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <button id="btnModeSLA" onclick="switchMode('SLA')"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/25">
+          <span class="w-2 h-2 rounded-full bg-slate-950 animate-pulse"></span>
+          Mode 1: Formlabs SLA (Cd* = 145 µm)
+        </button>
+        <button id="btnModeSLS" onclick="switchMode('SLS')"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 text-slate-400 hover:text-white">
+          <span class="w-2 h-2 rounded-full bg-orange-400"></span>
+          Mode 2: Formlabs SLS (dm* = 135 µm)
+        </button>
+      </div>
+
+      <!-- Export & Modular Source Code Utilities -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="openSourceModal()"
+          class="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
+          <svg class="w-3.5 h-3.5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          Download Separated HTML / CSS / JS
+        </button>
+        <button onclick="captureCompositePaperFigure()"
+          class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition">
+          <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Capture Paper Snapshot (PNG)
+        </button>
+        <button onclick="exportTelemetryCSV()"
+          class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition">
+          <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Export 50-Layer PID CSV
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- =====================================================================
+       MAIN WORKSPACE GRID: 3D VIEWPORT (LEFT 7 COLS) + PID & PROCESS CONTROLS (RIGHT 5 COLS)
+       ===================================================================== -->
+  <main class="flex-1 max-w-[1920px] w-full mx-auto p-3 sm:p-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
+
+    <!-- LEFT COLUMN (7 COLS): 3D WEBGL DIGITAL TWIN + TIMELINE + 6-DOF DH READOUTS -->
+    <section class="xl:col-span-7 flex flex-col gap-3">
+
+      <!-- 3D Viewport Container -->
+      <div class="relative w-full h-[520px] sm:h-[600px] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 shadow-2xl">
+        <!-- Three.js WebGL Mount -->
+        <div id="threeViewport" class="w-full h-full cursor-grab active:cursor-grabbing"></div>
+
+        <!-- Top-Left Live Digital Twin & Coaxial Sensor HUD -->
+        <div class="absolute top-3 left-3 glass-hud rounded-xl p-3 max-w-xs sm:max-w-md pointer-events-none select-none shadow-lg">
+          <div class="flex items-center justify-between gap-3 mb-1.5">
+            <span id="hudStationTitle" class="text-xs font-bold uppercase tracking-wider text-cyan-400 mono">
+              FORMLABS FORM 4L / 3L (SLA STATION)
+            </span>
+            <span id="hudSensorBadge" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 mono">
+              OCT Sensor Active
+            </span>
+          </div>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] mono">
+            <div class="text-slate-400">Layer n / N: <span id="hudLayerNum" class="text-white font-bold">18 / 50</span></div>
+            <div class="text-slate-400">Part Height Z: <span id="hudPartZ" class="text-white font-semibold">1.80 mm</span></div>
+            <div class="text-slate-400">Standoff d_hold: <span id="hudStandoff" class="text-emerald-400 font-bold">150.0 mm</span></div>
+            <div class="text-slate-400">TCP Pose (mm): <span id="hudTCP" class="text-amber-300 font-semibold">(382, 169, 417)</span></div>
+            <div class="text-slate-400"><span id="hudTargetLabel">Setpoint Cd*:</span> <span id="hudTargetVal" class="text-emerald-300 font-bold">145.0 µm</span></div>
+            <div class="text-slate-400"><span id="hudMeasLabel">Measured Cd(n):</span> <span id="hudMeasVal" class="text-cyan-300 font-bold">145.1 µm</span></div>
+            <div class="text-slate-400">PID Power P(n): <span id="hudModPower" class="text-white font-semibold">58.4 mW</span></div>
+            <div class="text-slate-400">PID Speed vs(n): <span id="hudModSpeed" class="text-white font-semibold">4920 mm/s</span></div>
+          </div>
+          <!-- Color Legend for 3D Layer Accuracy -->
+          <div class="mt-2 pt-1.5 border-t border-slate-800/90 flex items-center justify-between text-[10px] mono text-slate-300">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>PID Locked (±2 µm)</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>Thermal Drift (&gt;4 µm)</span>
+          </div>
+        </div>
+
+        <!-- Top-Right Picture-in-Picture (PiP) 2D Layer Slicer & Micron Pool Cross-Section -->
+        <div class="absolute top-3 right-3 glass-hud rounded-xl p-2.5 w-60 sm:w-68 border border-slate-700/80 shadow-xl">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[11px] font-semibold text-slate-200 mono">2D Layer Slicer &amp; Pool Depth</span>
+            <span id="pipScanAngleBadge" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 mono">Raster: 90°</span>
+          </div>
+          <canvas id="pipSlicerCanvas" width="256" height="172" class="w-full h-[162px] rounded-lg bg-slate-950 border border-slate-800"></canvas>
+          <div class="mt-1 flex items-center justify-between text-[10px] text-slate-400 mono">
+            <span>2 Perimeters + 0°/90° Infill</span>
+            <span id="pipBondStatus" class="text-emerald-400 font-semibold">● PID Depth Locked</span>
+          </div>
+        </div>
+
+        <!-- Bottom Camera View Presets (5 Views) & Workcell Toggles -->
+        <div class="absolute bottom-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 glass-hud rounded-xl p-2">
+          <div class="flex flex-wrap items-center gap-1">
+            <span class="text-[10px] text-slate-400 font-semibold px-1 uppercase tracking-wider hidden sm:inline">Views:</span>
+            <button onclick="setCameraPreset('isometric')" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-cyan-500/20 hover:text-cyan-300 border border-slate-700 text-[11px] font-medium transition">
+              1. Isometric Cell
+            </button>
+            <button onclick="setCameraPreset('top')" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-cyan-500/20 hover:text-cyan-300 border border-slate-700 text-[11px] font-medium transition">
+              2. Top-Down XY
+            </button>
+            <button onclick="setCameraPreset('front')" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-cyan-500/20 hover:text-cyan-300 border border-slate-700 text-[11px] font-medium transition">
+              3. Front XZ Standoff
+            </button>
+            <button onclick="setCameraPreset('closeup')" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-cyan-500/20 hover:text-cyan-300 border border-slate-700 text-[11px] font-medium transition">
+              4. Build Vat/Bed
+            </button>
+            <button onclick="setCameraPreset('sensor')" class="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-medium transition">
+              5. TCP Sensor Cone
+            </button>
+          </div>
+
+          <div class="flex items-center gap-1">
+            <button id="btnToggleVisor" onclick="togglePrinterVisor()" class="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-medium transition">
+              Visor: Closed
+            </button>
+            <button id="btnToggleEnvelope" onclick="toggleWorkspaceEnvelope()" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-medium transition">
+              Reach (901 mm)
+            </button>
+            <button onclick="triggerPostProcessTransfer()" class="px-2 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[11px] font-medium transition">
+              Wash/Sift Transfer
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 50-Layer Print Timeline Scrubber & Live 6-DOF Joint Angles Bar -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-xl">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5">
+            <button id="btnPlayPause" onclick="togglePlayAnimation()"
+              class="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md transition">
+              <span id="playPauseIcon">❚❚</span>
+              <span id="playPauseText">Pause Print</span>
+            </button>
+            <button onclick="stepSingleLayer(-1)" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700">
+              -1 Layer
+            </button>
+            <button onclick="stepSingleLayer(1)" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700">
+              +1 Layer
+            </button>
+            <button onclick="resetPrintSimulation()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700">
+              Reset (L1)
+            </button>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3 text-xs mono">
+            <div>Layer: <span id="timelineLayerLabel" class="font-bold text-cyan-400">18 / 50</span></div>
+            <div>ΔT Accum: <span id="timelineThermalLabel" class="font-bold text-amber-400">+6.15 °C</span></div>
+            <div>Elapsed: <span id="timelineElapsedLabel" class="font-bold text-white">108.4 s</span></div>
+            <div class="flex items-center gap-1">
+              <span class="text-slate-400">Speed:</span>
+              <select id="simSpeedSelect" onchange="updateSimSpeed(this.value)" class="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-white">
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1.0x</option>
+                <option value="2.5">2.5x</option>
+                <option value="5">5.0x</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Layer Scrubber Slider (1 to 50) -->
+        <div class="flex items-center gap-3">
+          <span class="text-[11px] mono text-slate-400 w-14">Layer 1</span>
+          <input id="sliderLayer" type="range" min="1" max="50" step="1" value="18" class="sla-slider" oninput="onLayerScrub(this.value)" />
+          <span class="text-[11px] mono text-slate-400 w-16 text-right">Layer 50</span>
+        </div>
+
+        <!-- 6-DOF DH Joint Angles & Manipulability Readout -->
+        <div class="grid grid-cols-3 sm:grid-cols-7 gap-1.5 pt-1 border-t border-slate-800/80 text-center mono text-[11px]">
+          <div class="bg-slate-950/90 rounded-lg p-1.5 border border-slate-800">
+            <div class="text-slate-400 text-[10px]">θ₁ (Waist)</div>
+            <div id="jointVal1" class="text-cyan-300 font-semibold">+23.9°</div>
+          </div>
+          <div class="bg-slate-950/90 rounded-lg p-1.5 border border-slate-800">
+            <div class="text-slate-400 text-[10px]">θ₂ (Shoulder)</div>
+            <div id="jointVal2" class="text-cyan-300 font-semibold">-63.8°</div>
+          </div>
+          <div class="bg-slate-950/90 rounded-lg p-1.5 border border-slate-800">
+            <div class="text-slate-400 text-[10px]">θ₃ (Elbow)</div>
+            <div id="jointVal3" class="text-cyan-300 font-semibold">+39.4°</div>
+          </div>
+          <div class="bg-slate-950/90 rounded-lg p-1.5 border border-slate-800">
+            <div class="text-slate-400 text-[10px]">θ₄ (Forearm)</div>
+            <div id="jointVal4" class="text-cyan-300 font-semibold">+0.0°</div>
+          </div>
+          <div class="bg-slate-950/90 rounded-lg p-1.5 border border-slate-800">
+            <div class="text-slate-400 text-[10px]">θ₅ (Wrist)</div>
+            <div id="jointVal5" class="text-cyan-300 font-semibold">+64.4°</div>
+          </div>
+          <div class="bg-slate-950/90 rounded-lg p-1.5 border border-slate-800">
+            <div class="text-slate-400 text-[10px]">θ₆ (Flange)</div>
+            <div id="jointVal6" class="text-cyan-300 font-semibold">-23.9°</div>
+          </div>
+          <div class="bg-slate-950/90 rounded-lg p-1.5 border border-emerald-500/30 col-span-3 sm:col-span-1">
+            <div class="text-slate-400 text-[10px]">Manipulability w(θ)</div>
+            <div id="manipVal" class="text-emerald-400 font-bold">0.846</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN (5 COLS): CLOSED-LOOP PID CONTROLLER + PROCESS SLIDERS + KPI CARDS -->
+    <aside class="xl:col-span-5 flex flex-col gap-3">
+
+      <!-- CARD 1: CLOSED-LOOP DUAL-ACTUATOR PID CONTROLLER ENGINE -->
+      <div class="bg-slate-900 border border-emerald-500/30 rounded-2xl p-4 flex flex-col gap-3 shadow-xl">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+          <div>
+            <h2 class="text-xs sm:text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 mono">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              Closed-Loop Dual-Actuator PID Controller
+            </h2>
+            <p class="text-[11px] text-slate-400">
+              Modulates P(n) &amp; v_s(n) per layer to reject exothermic &amp; optical drift
+            </p>
+          </div>
+
+          <!-- Closed-Loop vs Open-Loop Switcher -->
+          <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <button id="btnLoopClosed" onclick="setControlLoopMode(true)"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500 text-slate-950 shadow transition">
+              Closed-Loop PID
+            </button>
+            <button id="btnLoopOpen" onclick="setControlLoopMode(false)"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white transition">
+              Open-Loop (Drift)
+            </button>
+          </div>
+        </div>
+
+        <!-- Setpoint Slider & Dual-Actuator Split Slider -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div class="flex justify-between text-xs">
+              <span id="labelSetpoint" class="font-semibold text-emerald-300">Target Depth Setpoint (Cd*)</span>
+              <span id="valSetpoint" class="mono font-bold text-emerald-400">145.0 µm</span>
+            </div>
+            <input id="sliderSetpoint" type="range" min="110" max="220" step="1" value="145" class="pid-slider" oninput="onPIDParameterInput()" />
+            <div class="flex justify-between text-[10px] text-slate-500 mono">
+              <span id="minSetpointLabel">110 µm</span>
+              <span>Default: 145 µm (SLA) / 135 µm (SLS)</span>
+              <span id="maxSetpointLabel">220 µm</span>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div class="flex justify-between text-xs">
+              <span class="font-semibold text-cyan-300">Actuator Split Ratio (α_split)</span>
+              <span id="valSplitRatio" class="mono font-bold text-cyan-400">65% P / 35% v_s</span>
+            </div>
+            <input id="sliderSplitRatio" type="range" min="0" max="1" step="0.05" value="0.65" class="sla-slider" oninput="onPIDParameterInput()" />
+            <div class="flex justify-between text-[10px] text-slate-500 mono">
+              <span>0% (Speed Only)</span>
+              <span>Coordinated</span>
+              <span>100% (Power Only)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Discrete PID Gains (Kp, Ki, Kd) Sliders -->
+        <div class="grid grid-cols-3 gap-2.5 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/90">
+          <div class="space-y-1">
+            <div class="flex justify-between text-[11px]">
+              <span class="text-slate-300 font-semibold">Prop. Gain K_p</span>
+              <span id="valKp" class="mono font-bold text-emerald-400">0.85</span>
+            </div>
+            <input id="sliderKp" type="range" min="0" max="2.5" step="0.05" value="0.85" class="pid-slider" oninput="onPIDParameterInput()" />
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between text-[11px]">
+              <span class="text-slate-300 font-semibold">Integral K_i</span>
+              <span id="valKi" class="mono font-bold text-emerald-400">0.42</span>
+            </div>
+            <input id="sliderKi" type="range" min="0" max="1.5" step="0.02" value="0.42" class="pid-slider" oninput="onPIDParameterInput()" />
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between text-[11px]">
+              <span class="text-slate-300 font-semibold">Deriv. Gain K_d</span>
+              <span id="valKd" class="mono font-bold text-emerald-400">0.12</span>
+            </div>
+            <input id="sliderKd" type="range" min="0" max="0.8" step="0.02" value="0.12" class="pid-slider" oninput="onPIDParameterInput()" />
+          </div>
+        </div>
+
+        <!-- Disturbance Injection & Auto-Tune Action Row -->
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <button onclick="injectDisturbanceSurge()"
+            class="flex-1 py-1.5 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+            <span>⚡ Inject +15% Thermal/Optical Surge</span>
+          </button>
+          <button onclick="clearDisturbanceSurge()"
+            class="py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition">
+            Clear Surge
+          </button>
+          <button onclick="autoTunePIDGains()"
+            class="py-1.5 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition">
+            Auto-Tune IMC / Z-N Gains
+          </button>
+        </div>
+      </div>
+
+      <!-- CARD 2: MATERIAL FORMULATION & BASE PROCESS PARAMETERS -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2.5 shadow-xl">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-white">
+            Material Formulation &amp; Base Hardware Setpoints
+          </h3>
+          <button onclick="loadOptimalBasePreset()" class="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-medium">
+            Calibrate Base for Setpoint
+          </button>
+        </div>
+
+        <!-- Material Selector -->
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+          <select id="materialSelect" onchange="onMaterialChange(this.value)"
+            class="sm:col-span-7 bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-medium text-white focus:outline-none focus:border-cyan-500">
+          </select>
+          <div id="materialPropsBox" class="sm:col-span-5 grid grid-cols-3 gap-1 text-[10px] mono bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-center">
+          </div>
+        </div>
+
+        <!-- 2x2 Grid of Base Process Sliders + Robot Holding Distance d_hold -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2 pt-1">
+          <!-- Base Laser Power -->
+          <div class="space-y-0.5">
+            <div class="flex justify-between text-[11px]">
+              <span id="labelPower" class="text-slate-300">Base Laser Power (P_base)</span>
+              <span id="valPower" class="mono font-bold text-cyan-400">65.0 mW</span>
+            </div>
+            <input id="sliderPower" type="range" min="30" max="120" step="0.5" value="65" class="sla-slider" oninput="onPIDParameterInput()" />
+          </div>
+
+          <!-- Base Scan Speed -->
+          <div class="space-y-0.5">
+            <div class="flex justify-between text-[11px]">
+              <span class="text-slate-300">Base Scan Speed (v_s,base)</span>
+              <span id="valSpeed" class="mono font-bold text-cyan-400">4695 mm/s</span>
+            </div>
+            <input id="sliderSpeed" type="range" min="800" max="7500" step="25" value="4695" class="sla-slider" oninput="onPIDParameterInput()" />
+          </div>
+
+          <!-- Layer Thickness -->
+          <div class="space-y-0.5">
+            <div class="flex justify-between text-[11px]">
+              <span class="text-slate-300">Layer Thickness (l_t)</span>
+              <span id="valLayerThick" class="mono font-bold text-cyan-400">100 µm</span>
+            </div>
+            <input id="sliderLayerThick" type="range" min="50" max="200" step="5" value="100" class="sla-slider" oninput="onPIDParameterInput()" />
+          </div>
+
+          <!-- Hatch Spacing -->
+          <div class="space-y-0.5">
+            <div class="flex justify-between text-[11px]">
+              <span class="text-slate-300">Hatch Spacing (h_s)</span>
+              <span id="valHatch" class="mono font-bold text-cyan-400">85 µm</span>
+            </div>
+            <input id="sliderHatch" type="range" min="50" max="300" step="5" value="85" class="sla-slider" oninput="onPIDParameterInput()" />
+          </div>
+        </div>
+
+        <!-- Standoff Holding Distance Slider (d_hold) -->
+        <div class="pt-1.5 border-t border-slate-800/80 space-y-0.5">
+          <div class="flex justify-between text-[11px]">
+            <span class="font-semibold text-emerald-300">6-DOF TCP Holding Distance (d_hold) &amp; Sensor Standoff</span>
+            <span id="valStandoff" class="mono font-bold text-emerald-400">150.0 mm</span>
+          </div>
+          <input id="sliderStandoff" type="range" min="80" max="250" step="1" value="150" class="pid-slider" oninput="onPIDParameterInput()" />
+        </div>
+      </div>
+
+      <!-- CARD 3: REAL-TIME PID & PHYSICS VERIFICATION KPI TELEMETRY -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-col gap-2 shadow-xl">
+        <div class="flex items-center justify-between">
+          <h3 id="mathCardTitle" class="text-xs font-bold uppercase tracking-wider text-cyan-400 mono">
+            REAL-TIME PID PERFORMANCE &amp; LAYER n TELEMETRY
+          </h3>
+          <span id="qualityStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 mono">
+            RMSE = 0.42 µm
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mono">
+          <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+            <div id="kpi1Title" class="text-[10px] text-slate-400">Measured vs Target</div>
+            <div id="kpi1Val" class="text-xs font-bold text-emerald-400 mt-0.5">145.1 / 145.0 µm</div>
+          </div>
+          <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+            <div id="kpi2Title" class="text-[10px] text-slate-400">Open-Loop Drift</div>
+            <div id="kpi2Val" class="text-xs font-bold text-rose-400 mt-0.5">163.8 µm (+18.8)</div>
+          </div>
+          <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+            <div id="kpi3Title" class="text-[10px] text-slate-400">Modulated Power P(n)</div>
+            <div id="kpi3Val" class="text-xs font-bold text-cyan-300 mt-0.5">58.4 mW</div>
+          </div>
+          <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+            <div id="kpi4Title" class="text-[10px] text-slate-400">Modulated Speed vs(n)</div>
+            <div id="kpi4Val" class="text-xs font-bold text-amber-300 mt-0.5">4922 mm/s</div>
+          </div>
+          <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+            <div id="kpi5Title" class="text-[10px] text-slate-400">Tracking Error e(n)</div>
+            <div id="kpi5Val" class="text-xs font-bold text-white mt-0.5">-0.12 µm</div>
+          </div>
+          <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+            <div id="kpi6Title" class="text-[10px] text-slate-400">50-Layer PID RMSE</div>
+            <div id="kpi6Val" class="text-xs font-bold text-emerald-400 mt-0.5">0.48 µm</div>
+          </div>
+          <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+            <div id="kpi7Title" class="text-[10px] text-slate-400">Drift Reduction</div>
+            <div id="kpi7Val" class="text-xs font-bold text-emerald-300 mt-0.5">97.4% Reduced</div>
+          </div>
+          <div class="bg-slate-950 p-2 rounded-xl border border-slate-800">
+            <div id="kpi8Title" class="text-[10px] text-slate-400">Cured/Melt Width</div>
+            <div id="kpi8Val" class="text-xs font-bold text-white mt-0.5">58.1 µm</div>
+          </div>
+        </div>
+
+        <div id="govEquationBox" class="bg-slate-950/90 border border-slate-800/90 rounded-xl px-2.5 py-1.5 text-[10px] mono text-slate-300 leading-relaxed">
+          u(n) = Kp·e(n) + Ki·∑e(k) + Kd·Δe(n) | P(n) = P_base + α·γ_P·u(n), v_s(n) = v_base - (1-α)·γ_v·u(n)
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ===================================================================
+         BOTTOM FULL-WIDTH SECTION (12 COLS): 6-GRAPH DSP SCIENTIFIC TELEMETRY SUITE
+         =================================================================== -->
+    <section class="xl:col-span-12 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-2xl">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800">
+        <div>
+          <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+            6-Channel DSP &amp; Closed-Loop PID Scientific Telemetry Suite (50-Layer Cylindrical Print Verification)
+          </h2>
+          <p class="text-xs text-slate-400">
+            Hover over any graph to inspect layer-specific telemetry or click on a layer plot to scrub the 3D Digital Twin directly to that layer.
+          </p>
+        </div>
+        <div id="dspHoverReadout" class="px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs mono text-cyan-300">
+          Active Layer n = 18 / 50 | Setpoint = 145.0 µm | PID Locked
+        </div>
+      </div>
+
+      <!-- 3x2 Grid of High-DPI Scientific Canvas Charts -->
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+        <!-- GRAPH 1: 50-Layer Closed-Loop PID vs Open-Loop Depth Tracking -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1">
+            <span id="graph1Title" class="text-xs font-bold text-emerald-400 mono">
+              [GRAPH 1] 50-Layer PID vs. Open-Loop Depth (Cd* = 145 µm)
+            </span>
+            <span class="text-[10px] text-slate-400 mono">±2 µm Tol. Band</span>
+          </div>
+          <canvas id="canvasGraph1" class="dsp-grid-canvas"></canvas>
+        </div>
+
+        <!-- GRAPH 2: Dual-Actuator Dynamic Modulation P(n), vs(n) & Error e(n) -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1">
+            <span id="graph2Title" class="text-xs font-bold text-cyan-300 mono">
+              [GRAPH 2] Dual-Actuator Modulation: P_mod(n) &amp; v_s,mod(n)
+            </span>
+            <span class="text-[10px] text-slate-400 mono">Left: Power | Right: Speed</span>
+          </div>
+          <canvas id="canvasGraph2" class="dsp-grid-canvas"></canvas>
+        </div>
+
+        <!-- GRAPH 3: SLA Jacobs Working Curve / SLS Rosenthal Melt Curve -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1">
+            <span id="graph3Title" class="text-xs font-bold text-cyan-300 mono">
+              [GRAPH 3] Jacobs Working Curve: PID Point vs. Open-Loop Drift
+            </span>
+            <span class="text-[10px] text-slate-400 mono">5 Formulations</span>
+          </div>
+          <canvas id="canvasGraph3" class="dsp-grid-canvas"></canvas>
+        </div>
+
+        <!-- GRAPH 4: Spatial Cure Profile Cd(y) / Rosenthal Thermal Field T(xi, z) -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1">
+            <span id="graph4Title" class="text-xs font-bold text-amber-300 mono">
+              [GRAPH 4] Spatial Multi-Hatch Cure Profile z(y) at Layer n
+            </span>
+            <span class="text-[10px] text-slate-400 mono">Target Crosshair</span>
+          </div>
+          <canvas id="canvasGraph4" class="dsp-grid-canvas"></canvas>
+        </div>
+
+        <!-- GRAPH 5: 6-DOF Robot Joint Trajectories & Manipulability -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1">
+            <span id="graph5Title" class="text-xs font-bold text-purple-300 mono">
+              [GRAPH 5] 6-DOF Joint Trajectories (θ₁..θ₆) &amp; w(θ) Across 50 Layers
+            </span>
+            <span class="text-[10px] text-slate-400 mono">d_hold = 150 mm</span>
+          </div>
+          <canvas id="canvasGraph5" class="dsp-grid-canvas"></canvas>
+        </div>
+
+        <!-- GRAPH 6: 2D RSM Quadratic Response Surface Contour + PID Trajectory -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1">
+            <span id="graph6Title" class="text-xs font-bold text-rose-300 mono">
+              [GRAPH 6] 2D RSM Contour (P vs v_s) &amp; Live PID Trajectory
+            </span>
+            <span class="text-[10px] text-slate-400 mono">Iso-Depth Lock</span>
+          </div>
+          <canvas id="canvasGraph6" class="dsp-grid-canvas"></canvas>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =====================================================================
+       MODAL: SEPARATED HTML / CSS / JS SOURCE CODE VIEWER & DOWNLOADER
+       ===================================================================== -->
+  <div id="sourceModal" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-800">
+        <div>
+          <h3 class="text-base font-bold text-white">Download Separated HTML, CSS &amp; JS Source Files</h3>
+          <p class="text-xs text-slate-400">Standalone modular files (`index.html`, `styles.css`, `digital_twin.js`) ready for local deployment &amp; paper supplementary material</p>
+        </div>
+        <button onclick="closeSourceModal()" class="text-slate-400 hover:text-white text-xs font-bold px-3 py-1.5 rounded-lg bg-slate-800">✕ Close</button>
+      </div>
+      <div class="p-5 overflow-y-auto space-y-4 text-xs mono">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button onclick="downloadSeparateFile('index.html')" class="p-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 font-bold flex flex-col items-center gap-1 transition">
+            <span>1. Download index.html</span>
+            <span class="text-[10px] text-slate-400 font-normal">Clean HTML5 Structure + Links</span>
+          </button>
+          <button onclick="downloadSeparateFile('styles.css')" class="p-3 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-200 font-bold flex flex-col items-center gap-1 transition">
+            <span>2. Download styles.css</span>
+            <span class="text-[10px] text-slate-400 font-normal">Dark Industrial UI &amp; Sliders</span>
+          </button>
+          <button onclick="downloadSeparateFile('digital_twin.js')" class="p-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 font-bold flex flex-col items-center gap-1 transition">
+            <span>3. Download digital_twin.js</span>
+            <span class="text-[10px] text-slate-400 font-normal">Three.js + DH + PID + 6 DSP Plots</span>
+          </button>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-300 font-sans text-xs leading-relaxed">
+          <strong>Deployment Instructions:</strong> Place the downloaded <code>index.html</code>, <code>styles.css</code>, and <code>digital_twin.js</code> in the same folder and open <code>index.html</code> in any modern browser. The exported <code>index.html</code> automatically links <code>&lt;link rel="stylesheet" href="styles.css"&gt;</code> and <code>&lt;script src="digital_twin.js"&gt;&lt;/script&gt;</code>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Banner -->
+  <div id="toastBanner" class="fixed bottom-5 right-5 z-50 hidden px-4 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs shadow-xl transition-all">
+    Action completed!
+  </div>
+
+  <!-- =====================================================================
+       MODULE 2: COMPLETE JAVASCRIPT ENGINE (digital_twin.js)
+       ===================================================================== -->
+  <script id="digital-twin-script">
+    /*************************************************************************
+     * 1. VERIFIED PHASE-1 DATABASES: 6-DOF DH TABLE, SLA RESINS & SLS POWDERS
+     *************************************************************************/
+    const DH_TABLE = [
+      { a: 25.0,  alpha: -Math.PI / 2, d: 400.0, theta0: 0.0 },
+      { a: 455.0, alpha: 0.0,          d: 0.0,   theta0: -Math.PI / 2 },
+      { a: 35.0,  alpha: -Math.PI / 2, d: 0.0,   theta0: 0.0 },
+      { a: 0.0,   alpha:  Math.PI / 2, d: 420.0, theta0: 0.0 },
+      { a: 0.0,   alpha: -Math.PI / 2, d: 0.0,   theta0: 0.0 },
+      { a: 0.0,   alpha: 0.0,          d: 80.0,  theta0: 0.0 }
+    ];
+
+    const SLA_MATERIALS = [
+      { id: 'clear_v5',     name: 'Formlabs Clear V5 (Standard Methacrylate)', Dp: 155.0, Ec: 10.2, visc: 900,  shrink: 1.6, color: '#06b6d4' },
+      { id: 'tough_2000',   name: 'Formlabs Tough 2000 (Patented Urethane)',   Dp: 128.0, Ec: 13.8, visc: 1450, shrink: 1.9, color: '#3b82f6' },
+      { id: 'rigid_10k',    name: 'Formlabs Rigid 10K (Patented 50% Glass)',   Dp: 92.0,  Ec: 16.5, visc: 2400, shrink: 0.8, color: '#a855f7' },
+      { id: 'silicone_40a', name: 'Formlabs Silicone 40A (Patented Pure Sil)', Dp: 175.0, Ec: 18.4, visc: 3100, shrink: 1.4, color: '#10b981' },
+      { id: 'pegda_700',    name: 'Standard PEGDA-700 (Hydrogel Benchmark)',   Dp: 190.0, Ec: 8.5,  visc: 450,  shrink: 2.2, color: '#eab308' }
+    ];
+
+    const SLS_MATERIALS = [
+      { id: 'pa12',    name: 'Formlabs Nylon 12 (PA12 Industrial)',     Tm: 185, T0: 172, k: 0.14, rho: 480, cp: 2350, Lf: 98000,  alphaA: 0.92, color: '#f97316' },
+      { id: 'pa12_gf', name: 'Formlabs Nylon 12 GF (Glass-Filled)',     Tm: 185, T0: 171, k: 0.21, rho: 610, cp: 1950, Lf: 68000,  alphaA: 0.89, color: '#ef4444' },
+      { id: 'pa11',    name: 'Formlabs Nylon 11 (PA11 Ductile)',        Tm: 201, T0: 186, k: 0.15, rho: 490, cp: 2400, Lf: 105000, alphaA: 0.93, color: '#eab308' },
+      { id: 'tpu_90a', name: 'Formlabs TPU 90A Elastomer Powder',       Tm: 160, T0: 138, k: 0.12, rho: 520, cp: 2100, Lf: 55000,  alphaA: 0.90, color: '#10b981' },
+      { id: 'pp_std',  name: 'Standard Polypropylene (PP Homopolymer)', Tm: 165, T0: 148, k: 0.11, rho: 430, cp: 2200, Lf: 88000,  alphaA: 0.88, color: '#38bdf8' }
+    ];
+
+    /*************************************************************************
+     * 2. GLOBAL DIGITAL TWIN & CLOSED-LOOP PID STATE
+     *************************************************************************/
+    const state = {
+      mode: 'SLA',               // 'SLA' or 'SLS'
+      materialIndex: 0,
+      closedLoopPID: true,       // true = Closed-Loop PID Active, false = Open-Loop Drift
+      targetSetpoint: 145.0,     // Cd* = 145.0 um (SLA), dm* = 135.0 um (SLS)
+      splitRatio: 0.65,          // alpha_split: 0.65 Power / 0.35 Scan Speed
+      Kp: 0.85,
+      Ki: 0.42,
+      Kd: 0.12,
+      basePower: 65.0,           // mW in SLA, W in SLS
+      baseSpeed: 4695.0,         // mm/s in SLA (calibrated so Layer 1 = 145 um), 3545 mm/s in SLS
+      layerThickness: 100.0,     // um (100 in SLA, 110 in SLS)
+      hatchSpacing: 85.0,        // um (85 in SLA, 200 in SLS)
+      standoffDist: 150.0,       // d_hold in mm (default 150 mm)
+      activeLayer: 18,           // 1 to 50
+      intraLayerProgress: 0.35,  // 0.0 to 1.0
+      isPlaying: true,
+      simSpeed: 1.0,
+      visorOpen: false,
+      showWorkspaceSphere: false,
+      transferAnimationActive: false,
+      transferPhase: 0.0,
+      disturbanceSurgeActive: false,
+      disturbanceLayerStart: 22,
+      // 50-Layer Precomputed Simulation Array
+      sim50: [],
+      rmsePID: 0.0,
+      rmseOpenLoop: 0.0,
+      driftReductionPct: 0.0,
+      jointAnglesDeg: [23.9, -63.8, 39.4, 0.0, 64.4, -23.9],
+      tcpPos: { x: 382, y: 169, z: 417 },
+      manipulability: 0.846
+    };
+
+    /*************************************************************************
+     * 3. 6-DOF DENAVIT-HARTENBERG FORWARD & INVERSE KINEMATICS ENGINE
+     *************************************************************************/
+    function computeDHMatrix(a, alpha, d, theta) {
+      const ct = Math.cos(theta), st = Math.sin(theta);
+      const ca = Math.cos(alpha), sa = Math.sin(alpha);
+      return [
+        [ct, -st * ca,  st * sa, a * ct],
+        [st,  ct * ca, -ct * sa, a * st],
+        [0,   sa,       ca,      d     ],
+        [0,   0,        0,       1     ]
+      ];
+    }
+
+    function multiplyMat4(A, B) {
+      const C = Array.from({ length: 4 }, () => [0, 0, 0, 0]);
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+          C[i][j] = A[i][0]*B[0][j] + A[i][1]*B[1][j] + A[i][2]*B[2][j] + A[i][3]*B[3][j];
+        }
+      }
+      return C;
+    }
+
+    function solveRobotKinematicsForTarget(targetX, targetY, targetZ) {
+      const d1 = DH_TABLE[0].d; // 400 mm
+      const a1 = DH_TABLE[0].a; // 25 mm
+      const a2 = DH_TABLE[1].a; // 455 mm
+      const a3 = DH_TABLE[2].a; // 35 mm
+      const d4 = DH_TABLE[3].d; // 420 mm
+      const d6 = DH_TABLE[5].d; // 80 mm
+
+      const theta1 = Math.atan2(targetY, targetX);
+      const wx = targetX - d6 * Math.cos(theta1) * 0.866;
+      const wy = targetY - d6 * Math.sin(theta1) * 0.866;
+      const wz = targetZ + d6 * 0.5;
+
+      const rw = Math.max(60, Math.hypot(wx, wy) - a1);
+      const sw = wz - d1;
+      const L34 = Math.hypot(a3, d4); // 421.456 mm
+      const phi0 = Math.atan2(d4, a3);
+
+      let cosGamma = (rw*rw + sw*sw - a2*a2 - L34*L34) / (2 * a2 * L34);
+      cosGamma = Math.max(-0.995, Math.min(0.995, cosGamma));
+      const sinGamma = Math.sqrt(1 - cosGamma * cosGamma);
+
+      const gamma = Math.atan2(sinGamma, cosGamma);
+      const theta3 = gamma - phi0 + Math.PI / 2;
+      const beta1 = Math.atan2(sw, rw);
+      const beta2 = Math.atan2(L34 * Math.sin(gamma), a2 + L34 * Math.cos(gamma));
+      const theta2 = -(beta1 + beta2) + Math.PI / 2;
+
+      const theta4 = 0.0;
+      const theta5 = Math.PI / 3 - 0.35 * (theta2 + theta3);
+      const theta6 = -theta1;
+
+      const qRad = [theta1, theta2 - Math.PI/2, theta3, theta4, theta5, theta6];
+      state.jointAnglesDeg = qRad.map(r => (r * 180) / Math.PI);
+
+      let T = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+      const jointPositions = [{ x: 0, y: 0, z: 0 }];
+      for (let i = 0; i < 6; i++) {
+        const th = DH_TABLE[i].theta0 + (state.jointAnglesDeg[i] * Math.PI) / 180;
+        const Ai = computeDHMatrix(DH_TABLE[i].a, DH_TABLE[i].alpha, DH_TABLE[i].d, th);
+        T = multiplyMat4(T, Ai);
+        jointPositions.push({ x: T[0][3], y: T[1][3], z: T[2][3] });
+      }
+      state.tcpPos = { x: targetX, y: targetY, z: targetZ };
+      state.manipulability = Math.max(0.45, Math.min(0.96, 0.88 * Math.sin(gamma) + 0.12));
+      return jointPositions;
+    }
+
+    /*************************************************************************
+     * 4. REAL-TIME 50-LAYER CLOSED-LOOP DUAL-ACTUATOR PID & PHYSICS SIMULATOR
+     *************************************************************************/
+    function evalSLACureDepth(mat, P_mW, vs_mms, nLayer, includeDisturbance) {
+      const W0_cm = 0.00425; // 42.5 um Gaussian radius (85 um spot)
+      const W0_um = 42.5;
+      const vs_cms = Math.max(10, vs_mms) / 10.0;
+
+      // Exothermic resin vat warmup across layers n = 1..50: dT_vat(n) = 8.5 * (1 - exp(-n/14))
+      const dT_vat = 8.5 * (1 - Math.exp(-(nLayer - 1) / 14.0));
+      // Optical FEP film attenuation tau(n) = 1 - 0.0012 * n
+      const tau_film = 1.0 - 0.0012 * (nLayer - 1);
+      // Optional +15% thermal/optical surge between layers 22..32
+      let surgeFactor = 1.0;
+      if (includeDisturbance && state.disturbanceSurgeActive && nLayer >= state.disturbanceLayerStart && nLayer <= state.disturbanceLayerStart + 10) {
+        surgeFactor = 1.15 * Math.sin(((nLayer - state.disturbanceLayerStart + 1) / 11) * Math.PI) * 0.15 + 1.12;
+      }
+
+      // Effective critical exposure drops with exothermic warmup, increasing cure depth by ~18-27 um over 50 layers
+      const Ec_eff = mat.Ec * (1.0 - 0.022 * dT_vat) / surgeFactor;
+      const E_max = Math.sqrt(2 / Math.PI) * ((P_mW * tau_film) / (W0_cm * vs_cms));
+      const Cd_um = Math.max(5.0, mat.Dp * Math.log(Math.max(1.001, E_max / Ec_eff)));
+      const Lw_um = 2 * W0_um * Math.sqrt(Cd_um / (2 * mat.Dp));
+
+      return { Cd_um, Lw_um, E_max, dT: dT_vat, Ec_eff };
+    }
+
+    function evalSLSMeltDepth(mat, P_W, vs_mms, nLayer, includeDisturbance) {
+      const vs_ms = Math.max(100, vs_mms) / 1000.0;
+      const db_um = 247.0;
+
+      // Heat retention in growing PA12 cylinder core: dT_bed(n) = 4.2 * (1 - exp(-n/12))
+      const dT_bed = 4.2 * (1 - Math.exp(-(nLayer - 1) / 12.0));
+      let surgeTemp = 0.0;
+      if (includeDisturbance && state.disturbanceSurgeActive && nLayer >= state.disturbanceLayerStart && nLayer <= state.disturbanceLayerStart + 10) {
+        surgeTemp = 3.6;
+      }
+
+      const T0_eff = mat.T0 + dT_bed + surgeTemp;
+      // Effective enthalpy drops as core preheat rises and powder thermal conductivity necks
+      const thermalNeckingFactor = 1.0 - 0.036 * dT_bed - (surgeTemp > 0 ? 0.14 : 0.0);
+      const Hv_eff = mat.rho * (mat.cp * Math.max(2.0, mat.Tm - T0_eff) + mat.Lf) * Math.max(0.55, thermalNeckingFactor);
+
+      const dm_m = Math.sqrt((2 * mat.alphaA * P_W) / (Math.PI * Math.E * Hv_eff * vs_ms));
+      const dm_um = dm_m * 1e6;
+      const wm_um = Math.sqrt(Math.pow(2 * dm_um, 2) + db_um * db_um);
+
+      return { dm_um, wm_um, dT: dT_bed + surgeTemp, T0_eff };
+    }
+
+    function run50LayerPIDSimulation() {
+      const N = 50;
+      const R_cyl = 20.0;
+      const A_cyl = Math.PI * R_cyl * R_cyl;
+      const P_cyl = 2 * Math.PI * R_cyl;
+      const hs_mm = state.hatchSpacing / 1000.0;
+      const L_vec_mm = 2 * P_cyl + (A_cyl / hs_mm);
+
+      const r_set = state.targetSetpoint;
+      const alpha = state.splitRatio;
+      const Kp = state.Kp;
+      const Ki = state.Ki;
+      const Kd = state.Kd;
+
+      const simData = [];
+      let integralErr = 0.0;
+      let prevErr = 0.0;
+      let u_control = 0.0;
+
+      let sumSqErrPID = 0.0;
+      let sumSqErrOL = 0.0;
+      let cumulativeTime = 0.0;
+
+      for (let n = 1; n <= N; n++) {
+        if (state.mode === 'SLA') {
+          const mat = SLA_MATERIALS[state.materialIndex];
+          // 1. Evaluate Uncompensated Open-Loop response at Layer n
+          const olRes = evalSLACureDepth(mat, state.basePower, state.baseSpeed, n, true);
+
+          // 2. Compute Dual-Actuator Modulated Power & Scan Speed for Layer n
+          // Sensitivity gains: gamma_P (mW per um control effort), gamma_v (mm/s per um control effort)
+          const gamma_P = 0.52;
+          const gamma_v = 38.0;
+
+          let P_mod = state.basePower;
+          let vs_mod = state.baseSpeed;
+          if (state.closedLoopPID) {
+            P_mod = Math.max(25.0, Math.min(125.0, state.basePower + alpha * gamma_P * u_control));
+            vs_mod = Math.max(600.0, Math.min(8500.0, state.baseSpeed - (1.0 - alpha) * gamma_v * u_control));
+          }
+
+          const clRes = evalSLACureDepth(mat, P_mod, vs_mod, n, true);
+          const y_meas = clRes.Cd_um;
+          const err = r_set - y_meas;
+
+          // Update Discrete PID Integrator (with anti-windup clamp) and Derivative for next layer
+          integralErr = Math.max(-65.0, Math.min(65.0, integralErr + err));
+          const derivErr = n === 1 ? 0.0 : (err - prevErr);
+          u_control = Kp * err + Ki * integralErr + Kd * derivErr;
+          prevErr = err;
+
+          const t_layer = (L_vec_mm / vs_mod) + 2.80;
+          cumulativeTime += t_layer;
+
+          sumSqErrPID += Math.pow(r_set - y_meas, 2);
+          sumSqErrOL += Math.pow(r_set - olRes.Cd_um, 2);
+
+          simData.push({
+            layer: n,
+            setpoint: r_set,
+            y_pid: y_meas,
+            y_ol: olRes.Cd_um,
+            width_um: clRes.Lw_um,
+            err: err,
+            u_control: u_control,
+            P_mod: P_mod,
+            vs_mod: vs_mod,
+            dT: clRes.dT,
+            E_max: clRes.E_max,
+            t_layer: t_layer,
+            t_cum: cumulativeTime
+          });
+        } else {
+          const mat = SLS_MATERIALS[state.materialIndex];
+          // 1. Evaluate Uncompensated Open-Loop SLS response at Layer n
+          const olRes = evalSLSMeltDepth(mat, state.basePower, state.baseSpeed, n, true);
+
+          // 2. Dual-Actuator Modulated Power & Scan Speed for SLS
+          const gamma_P = 0.24;
+          const gamma_v = 48.0;
+
+          let P_mod = state.basePower;
+          let vs_mod = state.baseSpeed;
+          if (state.closedLoopPID) {
+            P_mod = Math.max(8.0, Math.min(30.0, state.basePower + alpha * gamma_P * u_control));
+            vs_mod = Math.max(1200.0, Math.min(7500.0, state.baseSpeed - (1.0 - alpha) * gamma_v * u_control));
+          }
+
+          const clRes = evalSLSMeltDepth(mat, P_mod, vs_mod, n, true);
+          const y_meas = clRes.dm_um;
+          const err = r_set - y_meas;
+
+          integralErr = Math.max(-55.0, Math.min(55.0, integralErr + err));
+          const derivErr = n === 1 ? 0.0 : (err - prevErr);
+          u_control = Kp * err + Ki * integralErr + Kd * derivErr;
+          prevErr = err;
+
+          const lt_mm = state.layerThickness / 1000.0;
+          const VED = P_mod / (vs_mod * hs_mm * lt_mm);
+          const t_layer = (L_vec_mm / vs_mod) + 4.20;
+          cumulativeTime += t_layer;
+
+          sumSqErrPID += Math.pow(r_set - y_meas, 2);
+          sumSqErrOL += Math.pow(r_set - olRes.dm_um, 2);
+
+          simData.push({
+            layer: n,
+            setpoint: r_set,
+            y_pid: y_meas,
+            y_ol: olRes.dm_um,
+            width_um: clRes.wm_um,
+            err: err,
+            u_control: u_control,
+            P_mod: P_mod,
+            vs_mod: vs_mod,
+            dT: clRes.dT,
+            VED: VED,
+            t_layer: t_layer,
+            t_cum: cumulativeTime
+          });
+        }
+      }
+
+      state.sim50 = simData;
+      state.rmsePID = Math.sqrt(sumSqErrPID / N);
+      state.rmseOpenLoop = Math.sqrt(sumSqErrOL / N);
+      state.driftReductionPct = Math.max(0, (1.0 - state.rmsePID / Math.max(0.1, state.rmseOpenLoop)) * 100.0);
+
+      updateRobotPoseForCurrentState();
+      updateUIReadouts();
+    }
+
+    function updateRobotPoseForCurrentState() {
+      const stationY = state.mode === 'SLA' ? 230.0 : -240.0;
+      const stationX = 520.0;
+      const partHeightMm = (state.activeLayer * state.layerThickness) / 1000.0;
+      const stationZ = 250.0 + partHeightMm;
+
+      const angRad = Math.atan2(stationY, stationX);
+      let targetX = stationX - state.standoffDist * Math.cos(angRad);
+      let targetY = stationY - state.standoffDist * Math.sin(angRad);
+      let targetZ = stationZ + 165.0 + 3.5 * Math.sin((state.activeLayer / 50) * Math.PI * 2);
+
+      if (state.transferAnimationActive) {
+        const s = Math.sin(state.transferPhase * Math.PI);
+        targetX = targetX * (1 - 0.35 * s) + 220 * (0.35 * s);
+        targetY = targetY + (state.mode === 'SLA' ? 140 : -140) * s;
+        targetZ = targetZ + 85 * s;
+      }
+
+      solveRobotKinematicsForTarget(targetX, targetY, targetZ);
+    }
+
+    /*************************************************************************
+     * 5. THREE.JS 3D DIGITAL TWIN WITH SENSOR CONE & COLOR-CODED 50 LAYERS
+     *************************************************************************/
+    let scene, camera, renderer;
+    let robotJointMeshes = [], robotLinkMeshes = [];
+    let slaVisorMesh, slsVisorMesh, workspaceSphereMesh;
+    let cylinderLayersGroup, laserBeamLine, laserSpotGlow, standoffLine, sensorConeMesh;
+    let slaPeelBar, slsRecoaterBar;
+
+    const camOrbit = {
+      theta: 0.72,
+      phi: 1.05,
+      radius: 13.2,
+      target: new THREE.Vector3(2.8, 2.8, 0.0),
+      isDragging: false,
+      prevX: 0,
+      prevY: 0
+    };
+
+    const MM_TO_3D = 0.01;
+
+    function initThreeJS() {
+      const container = document.getElementById('threeViewport');
+      const w = container.clientWidth || 800;
+      const h = container.clientHeight || 560;
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x060911);
+      scene.fog = new THREE.FogExp2(0x060911, 0.018);
+
+      camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
+      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(w, h);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      container.innerHTML = '';
+      container.appendChild(renderer.domElement);
+
+      // Lighting
+      scene.add(new THREE.AmbientLight(0xdbeafe, 0.68));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.95);
+      dirLight.position.set(10, 18, 12);
+      scene.add(dirLight);
+
+      const slaLight = new THREE.PointLight(0x06b6d4, 0.75, 25);
+      slaLight.position.set(5.2, 5.5, -2.3);
+      scene.add(slaLight);
+
+      const slsLight = new THREE.PointLight(0xf97316, 0.7, 25);
+      slsLight.position.set(5.2, 5.5, 2.4);
+      scene.add(slsLight);
+
+      // Industrial Floor Grid
+      scene.add(new THREE.GridHelper(22, 44, 0x1e293b, 0x0f172a));
+
+      // Robot Base Pedestal at (0,0,0)
+      const pedMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.95, 1.15, 0.3, 32),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.7, roughness: 0.3 })
+      );
+      pedMesh.position.set(0, 0.15, 0);
+      scene.add(pedMesh);
+
+      // 6-DOF Articulated Robot Meshes
+      for (let i = 0; i < 7; i++) {
+        const jMesh = new THREE.Mesh(
+          new THREE.SphereGeometry(i === 6 ? 0.22 : 0.29, 24, 24),
+          new THREE.MeshStandardMaterial({
+            color: i === 6 ? 0x10b981 : 0xf97316,
+            metalness: 0.6,
+            roughness: 0.25
+          })
+        );
+        scene.add(jMesh);
+        robotJointMeshes.push(jMesh);
+
+        if (i < 6) {
+          const lMesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.17, 0.21, 1.0, 20),
+            new THREE.MeshStandardMaterial({
+              color: i % 2 === 0 ? 0xe2e8f0 : 0x334155,
+              metalness: 0.5,
+              roughness: 0.35
+            })
+          );
+          scene.add(lMesh);
+          robotLinkMeshes.push(lMesh);
+        }
+      }
+
+      // Build Mode 1: Formlabs Form 4L/3L SLA Workcell & Mode 2: Fuse 1+ 30W SLS Workcell
+      buildFormlabsSLAStation(5.2, -2.3);
+      buildFormlabsSLSStation(5.2, 2.4);
+
+      // 50-Layer Cylinder Group
+      cylinderLayersGroup = new THREE.Group();
+      scene.add(cylinderLayersGroup);
+
+      // Active Laser Beam & Spot Glow
+      laserBeamLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(5.2, 4.8, -2.3), new THREE.Vector3(5.2, 2.5, -2.3)]),
+        new THREE.LineBasicMaterial({ color: 0x06b6d4, linewidth: 2 })
+      );
+      scene.add(laserBeamLine);
+
+      laserSpotGlow = new THREE.Mesh(
+        new THREE.SphereGeometry(0.085, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0x67e8f9 })
+      );
+      scene.add(laserSpotGlow);
+
+      // Standoff Holding Distance Vector (d_hold)
+      standoffLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(3.7, 4.2, -2.3), new THREE.Vector3(5.2, 2.5, -2.3)]),
+        new THREE.LineDashedMaterial({ color: 0x10b981, dashSize: 0.14, gapSize: 0.08 })
+      );
+      standoffLine.computeLineDistances();
+      scene.add(standoffLine);
+
+      // Inline Coaxial OCT / NIR Pyrometer Optical Sensor Cone from Robot TCP to Active Layer
+      const coneGeo = new THREE.ConeGeometry(0.32, 1.0, 24, 1, true);
+      const coneMat = new THREE.MeshBasicMaterial({
+        color: 0x10b981,
+        transparent: true,
+        opacity: 0.18,
+        side: THREE.DoubleSide,
+        wireframe: false
+      });
+      sensorConeMesh = new THREE.Mesh(coneGeo, coneMat);
+      scene.add(sensorConeMesh);
+
+      // Workspace Reach Sphere (901 mm)
+      workspaceSphereMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(9.01, 32, 24),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.10 })
+      );
+      workspaceSphereMesh.position.set(0, 2.5, 0);
+      workspaceSphereMesh.visible = false;
+      scene.add(workspaceSphereMesh);
+
+      setupOrbitEvents(renderer.domElement);
+      updateCameraFromOrbit();
+      window.addEventListener('resize', onWindowResize);
+      rebuildCylinderLayers3D();
+    }
+
+    function buildFormlabsSLAStation(cx, cz) {
+      const group = new THREE.Group();
+      group.position.set(cx, 0, cz);
+
+      const baseMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(2.4, 2.4, 2.2),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.5, roughness: 0.4 })
+      );
+      baseMesh.position.y = 1.2;
+      group.add(baseMesh);
+
+      const vatMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.7, 0.25, 1.5),
+        new THREE.MeshPhysicalMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.55, roughness: 0.1 })
+      );
+      vatMesh.position.y = 2.52;
+      group.add(vatMesh);
+
+      slaPeelBar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 0.12, 1.42),
+        new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8 })
+      );
+      slaPeelBar.position.set(-0.5, 2.66, 0);
+      group.add(slaPeelBar);
+
+      slaVisorMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(2.32, 2.35, 2.12),
+        new THREE.MeshPhysicalMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.26, roughness: 0.15 })
+      );
+      slaVisorMesh.position.y = 3.6;
+      group.add(slaVisorMesh);
+
+      const washMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.3, 1.8, 1.3),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6, roughness: 0.4 })
+      );
+      washMesh.position.set(-2.1, 0.9, -1.3);
+      group.add(washMesh);
+
+      scene.add(group);
+    }
+
+    function buildFormlabsSLSStation(cx, cz) {
+      const group = new THREE.Group();
+      group.position.set(cx, 0, cz);
+
+      const towerBase = new THREE.Mesh(
+        new THREE.BoxGeometry(2.4, 2.4, 2.2),
+        new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.6, roughness: 0.35 })
+      );
+      towerBase.position.y = 1.2;
+      group.add(towerBase);
+
+      const bedMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.65, 0.22, 1.55),
+        new THREE.MeshStandardMaterial({ color: 0x57534e, emissive: 0x7c2d12, emissiveIntensity: 0.35 })
+      );
+      bedMesh.position.y = 2.52;
+      group.add(bedMesh);
+
+      slsRecoaterBar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.08, 1.48, 16),
+        new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.7 })
+      );
+      slsRecoaterBar.rotation.x = Math.PI / 2;
+      slsRecoaterBar.position.set(0.5, 2.66, 0);
+      group.add(slsRecoaterBar);
+
+      slsVisorMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(2.32, 2.35, 2.12),
+        new THREE.MeshPhysicalMaterial({ color: 0xea580c, transparent: true, opacity: 0.22, roughness: 0.2 })
+      );
+      slsVisorMesh.position.y = 3.6;
+      group.add(slsVisorMesh);
+
+      const siftMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.4, 2.0, 1.3),
+        new THREE.MeshStandardMaterial({ color: 0x27272a, metalness: 0.5, roughness: 0.4 })
+      );
+      siftMesh.position.set(-2.1, 1.0, 1.3);
+      group.add(siftMesh);
+
+      scene.add(group);
+    }
+
+    function rebuildCylinderLayers3D() {
+      if (!cylinderLayersGroup || state.sim50.length === 0) return;
+      while (cylinderLayersGroup.children.length > 0) {
+        cylinderLayersGroup.remove(cylinderLayersGroup.children[0]);
+      }
+
+      const cx = 5.2;
+      const cz = state.mode === 'SLA' ? -2.3 : 2.4;
+      const baseZ = 2.65;
+      const layerStep3D = 0.018;
+      const radius3D = 0.45;
+
+      for (let k = 1; k <= state.activeLayer; k++) {
+        const layerRow = state.sim50[k - 1];
+        const absErr = Math.abs(layerRow.err);
+        const isTop = k === state.activeLayer;
+
+        // Color-code 3D layer by PID depth tracking accuracy
+        let hexColor = state.mode === 'SLA' ? 0x06b6d4 : 0x10b981;
+        if (absErr > 4.5) {
+          hexColor = 0xf43f5e; // Red/Rose for uncompensated thermal drift or surge
+        } else if (absErr > 2.0) {
+          hexColor = 0xf59e0b; // Amber warning
+        }
+
+        const geo = new THREE.CylinderGeometry(radius3D, radius3D, layerStep3D * 0.86, 32);
+        const mat = new THREE.MeshStandardMaterial({
+          color: hexColor,
+          emissive: isTop ? hexColor : 0x000000,
+          emissiveIntensity: isTop ? 0.45 : 0.0,
+          roughness: state.mode === 'SLA' ? 0.2 : 0.6,
+          metalness: 0.15,
+          transparent: state.mode === 'SLA',
+          opacity: state.mode === 'SLA' ? 0.90 : 1.0
+        });
+        const disc = new THREE.Mesh(geo, mat);
+        disc.position.set(cx, baseZ + k * layerStep3D, cz);
+        cylinderLayersGroup.add(disc);
+      }
+    }
+
+    function updateThreeJSScene() {
+      const jointPts = solveRobotKinematicsForTarget(state.tcpPos.x, state.tcpPos.y, state.tcpPos.z);
+
+      for (let i = 0; i < 7; i++) {
+        const p = jointPts[i];
+        robotJointMeshes[i].position.set(p.x * MM_TO_3D, p.z * MM_TO_3D, -p.y * MM_TO_3D);
+
+        if (i < 6) {
+          const pNext = jointPts[i + 1];
+          const v1 = new THREE.Vector3(p.x * MM_TO_3D, p.z * MM_TO_3D, -p.y * MM_TO_3D);
+          const v2 = new THREE.Vector3(pNext.x * MM_TO_3D, pNext.z * MM_TO_3D, -pNext.y * MM_TO_3D);
+          const dist = Math.max(0.01, v1.distanceTo(v2));
+          const mid = v1.clone().add(v2).multiplyScalar(0.5);
+
+          robotLinkMeshes[i].position.copy(mid);
+          robotLinkMeshes[i].scale.set(1, dist, 1);
+          const dir = v2.clone().sub(v1).normalize();
+          robotLinkMeshes[i].quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        }
+      }
+
+      const cx = 5.2;
+      const cz = state.mode === 'SLA' ? -2.3 : 2.4;
+      const topY = 2.65 + state.activeLayer * 0.018;
+
+      const scanAngle = state.intraLayerProgress * Math.PI * 6;
+      const spotR = 0.42 * (0.25 + 0.75 * ((state.intraLayerProgress * 3) % 1));
+      const spotX = cx + spotR * Math.cos(scanAngle);
+      const spotZ = cz + spotR * Math.sin(scanAngle);
+
+      const sourceY = state.mode === 'SLA' ? 2.42 : 4.75;
+      laserBeamLine.geometry.setFromPoints([
+        new THREE.Vector3(cx, sourceY, cz),
+        new THREE.Vector3(spotX, topY, spotZ)
+      ]);
+      laserBeamLine.material.color.setHex(state.mode === 'SLA' ? 0x06b6d4 : 0xf97316);
+
+      laserSpotGlow.position.set(spotX, topY, spotZ);
+      laserSpotGlow.material.color.setHex(state.mode === 'SLA' ? 0x67e8f9 : 0xfef08a);
+
+      if (state.intraLayerProgress > 0.85) {
+        const sweep = ((state.intraLayerProgress - 0.85) / 0.15) * 1.2 - 0.6;
+        if (state.mode === 'SLA' && slaPeelBar) slaPeelBar.position.x = sweep;
+        if (state.mode === 'SLS' && slsRecoaterBar) slsRecoaterBar.position.x = -sweep;
+      }
+
+      // Update Standoff Holding Distance Vector & Inline Coaxial Sensor Cone
+      const tcp3D = robotJointMeshes[6].position.clone();
+      const buildCenter3D = new THREE.Vector3(cx, topY, cz);
+
+      standoffLine.geometry.setFromPoints([tcp3D, buildCenter3D]);
+      standoffLine.computeLineDistances();
+
+      if (sensorConeMesh) {
+        const coneDist = tcp3D.distanceTo(buildCenter3D);
+        const coneMid = tcp3D.clone().add(buildCenter3D).multiplyScalar(0.5);
+        sensorConeMesh.position.copy(coneMid);
+        sensorConeMesh.scale.set(1, coneDist, 1);
+        const coneDir = tcp3D.clone().sub(buildCenter3D).normalize();
+        sensorConeMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), coneDir);
+        sensorConeMesh.material.color.setHex(state.closedLoopPID ? 0x10b981 : 0xf43f5e);
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    function setupOrbitEvents(domEl) {
+      domEl.addEventListener('mousedown', e => {
+        camOrbit.isDragging = true;
+        camOrbit.prevX = e.clientX;
+        camOrbit.prevY = e.clientY;
+      });
+      window.addEventListener('mouseup', () => { camOrbit.isDragging = false; });
+      window.addEventListener('mousemove', e => {
+        if (!camOrbit.isDragging) return;
+        const dx = e.clientX - camOrbit.prevX;
+        const dy = e.clientY - camOrbit.prevY;
+        camOrbit.prevX = e.clientX;
+        camOrbit.prevY = e.clientY;
+        camOrbit.theta -= dx * 0.007;
+        camOrbit.phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.04, camOrbit.phi - dy * 0.007));
+        updateCameraFromOrbit();
+      });
+      domEl.addEventListener('wheel', e => {
+        e.preventDefault();
+        camOrbit.radius = Math.max(3.2, Math.min(24.0, camOrbit.radius + e.deltaY * 0.008));
+        updateCameraFromOrbit();
+      }, { passive: false });
+
+      domEl.addEventListener('touchstart', e => {
+        if (e.touches.length === 1) {
+          camOrbit.isDragging = true;
+          camOrbit.prevX = e.touches[0].clientX;
+          camOrbit.prevY = e.touches[0].clientY;
+        }
+      }, { passive: true });
+      window.addEventListener('touchend', () => { camOrbit.isDragging = false; });
+      window.addEventListener('touchmove', e => {
+        if (!camOrbit.isDragging || e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - camOrbit.prevX;
+        const dy = e.touches[0].clientY - camOrbit.prevY;
+        camOrbit.prevX = e.touches[0].clientX;
+        camOrbit.prevY = e.touches[0].clientY;
+        camOrbit.theta -= dx * 0.007;
+        camOrbit.phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.04, camOrbit.phi - dy * 0.007));
+        updateCameraFromOrbit();
+      }, { passive: true });
+    }
+
+    function updateCameraFromOrbit() {
+      const x = camOrbit.target.x + camOrbit.radius * Math.sin(camOrbit.phi) * Math.cos(camOrbit.theta);
+      const y = camOrbit.target.y + camOrbit.radius * Math.cos(camOrbit.phi);
+      const z = camOrbit.target.z + camOrbit.radius * Math.sin(camOrbit.phi) * Math.sin(camOrbit.theta);
+      camera.position.set(x, y, z);
+      camera.lookAt(camOrbit.target);
+    }
+
+    function setCameraPreset(preset) {
+      const activeZ = state.mode === 'SLA' ? -2.3 : 2.4;
+      if (preset === 'isometric') {
+        camOrbit.target.set(2.8, 2.8, 0.0);
+        camOrbit.theta = 0.72;
+        camOrbit.phi = 1.05;
+        camOrbit.radius = 13.2;
+      } else if (preset === 'top') {
+        camOrbit.target.set(5.2, 2.8, activeZ);
+        camOrbit.theta = 0.0;
+        camOrbit.phi = 0.16;
+        camOrbit.radius = 6.0;
+      } else if (preset === 'front') {
+        camOrbit.target.set(2.8, 2.9, 0.0);
+        camOrbit.theta = 0.0;
+        camOrbit.phi = 1.24;
+        camOrbit.radius = 11.8;
+      } else if (preset === 'closeup') {
+        camOrbit.target.set(5.2, 3.0, activeZ);
+        camOrbit.theta = 1.45;
+        camOrbit.phi = 1.32;
+        camOrbit.radius = 4.6;
+      } else if (preset === 'sensor') {
+        camOrbit.target.set(4.5, 3.3, activeZ);
+        camOrbit.theta = state.mode === 'SLA' ? -0.65 : 0.65;
+        camOrbit.phi = 1.15;
+        camOrbit.radius = 4.5;
+      }
+      updateCameraFromOrbit();
+    }
+
+    function togglePrinterVisor() {
+      state.visorOpen = !state.visorOpen;
+      const offsetY = state.visorOpen ? 5.3 : 3.6;
+      if (slaVisorMesh) slaVisorMesh.position.y = offsetY;
+      if (slsVisorMesh) slsVisorMesh.position.y = offsetY;
+      document.getElementById('btnToggleVisor').textContent = state.visorOpen ? 'Visor: Open' : 'Visor: Closed';
+    }
+
+    function toggleWorkspaceEnvelope() {
+      state.showWorkspaceSphere = !state.showWorkspaceSphere;
+      if (workspaceSphereMesh) workspaceSphereMesh.visible = state.showWorkspaceSphere;
+    }
+
+    function triggerPostProcessTransfer() {
+      state.transferAnimationActive = true;
+      state.transferPhase = 0.0;
+      showToast(state.mode === 'SLA'
+        ? 'Executing 6-DOF automated transfer trajectory to Form Wash L...'
+        : 'Executing 6-DOF automated build extraction to Fuse Sift...');
+    }
+
+    function onWindowResize() {
+      const container = document.getElementById('threeViewport');
+      if (!container || !renderer) return;
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderAll6Graphs();
+    }
+
+    /*************************************************************************
+     * 6. PICTURE-IN-PICTURE (PiP) 2D LAYER SLICER & POOL CROSS-SECTION
+     *************************************************************************/
+    function renderPiPSlicer() {
+      const canvas = document.getElementById('pipSlicerCanvas');
+      if (!canvas || state.sim50.length === 0) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const cur = state.sim50[state.activeLayer - 1];
+      const cx = 66, cy = 85, r = 50;
+
+      ctx.strokeStyle = '#1e293b';
+      ctx.strokeRect(8, 12, 116, 145);
+
+      const isEvenLayer = state.activeLayer % 2 === 0;
+      document.getElementById('pipScanAngleBadge').textContent = isEvenLayer ? 'Raster: 90°' : 'Raster: 0°';
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r - 4, 0, Math.PI * 2);
+      ctx.clip();
+
+      ctx.strokeStyle = state.mode === 'SLA' ? 'rgba(6, 182, 212, 0.35)' : 'rgba(249, 115, 22, 0.35)';
+      ctx.lineWidth = 1.2;
+      const stepPx = Math.max(4, Math.round(state.hatchSpacing / 18));
+      for (let offset = -r; offset <= r; offset += stepPx) {
+        ctx.beginPath();
+        if (isEvenLayer) {
+          ctx.moveTo(cx + offset, cy - r);
+          ctx.lineTo(cx + offset, cy + r);
+        } else {
+          ctx.moveTo(cx - r, cy + offset);
+          ctx.lineTo(cx + r, cy + offset);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // 2 Concentric Perimeters
+      ctx.strokeStyle = Math.abs(cur.err) <= 2.5 ? '#10b981' : '#f43f5e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r - 4, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Active Laser Spot
+      const ang = state.intraLayerProgress * Math.PI * 6;
+      const sr = (r - 6) * (0.25 + 0.75 * ((state.intraLayerProgress * 3) % 1));
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(cx + sr * Math.cos(ang), cy + sr * Math.sin(ang), 4.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Right Half: Real-Time Micron Pool Profile vs Target Setpoint Line
+      const px0 = 132, py0 = 24, pw = 114, ph = 122;
+      ctx.strokeStyle = '#334155';
+      ctx.strokeRect(px0, py0, pw, ph);
+
+      const maxScaleUm = 240.0;
+      const targetY = py0 + (state.targetSetpoint / maxScaleUm) * ph;
+      const olY = py0 + Math.min(ph - 4, (cur.y_ol / maxScaleUm) * ph);
+      const pidDepthPx = Math.min(ph - 4, (cur.y_pid / maxScaleUm) * ph);
+      const halfW = Math.min(pw * 0.44, (cur.width_um / 420) * (pw * 0.5));
+      const midX = px0 + pw / 2;
+
+      // Dashed Setpoint Reference Line
+      ctx.strokeStyle = '#10b981';
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(px0, targetY);
+      ctx.lineTo(px0 + pw, targetY);
+      ctx.stroke();
+
+      // Dotted Open-Loop Drift Line
+      ctx.strokeStyle = '#f43f5e';
+      ctx.beginPath();
+      ctx.moveTo(px0, olY);
+      ctx.lineTo(px0 + pw, olY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Parabolic Cure / Melt Pool Contour
+      ctx.fillStyle = state.closedLoopPID ? 'rgba(16, 185, 129, 0.42)' : 'rgba(244, 63, 94, 0.42)';
+      ctx.strokeStyle = state.closedLoopPID ? '#34d399' : '#fb7185';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(midX - halfW, py0);
+      ctx.quadraticCurveTo(midX, py0 + pidDepthPx * 1.92, midX + halfW, py0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '10px JetBrains Mono';
+      ctx.fillText(`Set:${state.targetSetpoint.toFixed(0)}µm`, px0 + 4, targetY - 3);
+      ctx.fillStyle = '#fda4af';
+      ctx.fillText(`OL:${cur.y_ol.toFixed(1)}µm`, px0 + 4, py0 + ph - 16);
+      ctx.fillStyle = '#6ee7b7';
+      ctx.fillText(`PID:${cur.y_pid.toFixed(1)}µm`, px0 + 4, py0 + ph - 4);
+    }
+
+    /*************************************************************************
+     * 7. SIX-CHANNEL DSP SCIENTIFIC TELEMETRY SUITE (HTML5 CANVAS CHARTS)
+     *************************************************************************/
+    function setupHiDPICanvas(id) {
+      const canvas = document.getElementById(id);
+      if (!canvas) return null;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width || 440;
+      const h = rect.height || 225;
+      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+      }
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { ctx, w, h, canvas };
+    }
+
+    function drawDSPGrid(ctx, padL, padT, plotW, plotH, xTicks, yTicks) {
+      ctx.fillStyle = '#060911';
+      ctx.fillRect(padL, padT, plotW, plotH);
+
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= xTicks; i++) {
+        const x = padL + (i / xTicks) * plotW;
+        ctx.beginPath();
+        ctx.moveTo(x, padT);
+        ctx.lineTo(x, padT + plotH);
+        ctx.stroke();
+      }
+      for (let j = 0; j <= yTicks; j++) {
+        const y = padT + (j / yTicks) * plotH;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#334155';
+      ctx.strokeRect(padL, padT, plotW, plotH);
+    }
+
+    function renderAll6Graphs() {
+      if (state.sim50.length === 0) return;
+      renderGraph1();
+      renderGraph2();
+      renderGraph3();
+      renderGraph4();
+      renderGraph5();
+      renderGraph6();
+    }
+
+    // GRAPH 1: 50-Layer Closed-Loop PID vs Open-Loop Depth Tracking
+    function renderGraph1() {
+      const setup = setupHiDPICanvas('canvasGraph1');
+      if (!setup) return;
+      const { ctx, w, h } = setup;
+      ctx.clearRect(0, 0, w, h);
+
+      const padL = 44, padR = 14, padT = 16, padB = 30;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+      drawDSPGrid(ctx, padL, padT, plotW, plotH, 5, 4);
+
+      const minY = state.targetSetpoint - 20;
+      const maxY = state.targetSetpoint + 38;
+      const mapX = n => padL + ((n - 1) / 49) * plotW;
+      const mapY = val => padT + plotH - ((val - minY) / (maxY - minY)) * plotH;
+
+      // +-2 um Tolerance Band around Setpoint
+      const yTolTop = mapY(state.targetSetpoint + 2.0);
+      const yTolBot = mapY(state.targetSetpoint - 2.0);
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.16)';
+      ctx.fillRect(padL, yTolTop, plotW, yTolBot - yTolTop);
+
+      // Setpoint Reference Line
+      const ySet = mapY(state.targetSetpoint);
+      ctx.strokeStyle = '#10b981';
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(padL, ySet);
+      ctx.lineTo(padL + plotW, ySet);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Uncompensated Open-Loop Thermal Drift Curve
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      state.sim50.forEach((row, i) => {
+        const px = mapX(row.layer), py = mapY(row.y_ol);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Closed-Loop PID Stabilized Curve
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      state.sim50.forEach((row, i) => {
+        const px = mapX(row.layer), py = mapY(row.y_pid);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Active Layer Cursor
+      const curX = mapX(state.activeLayer);
+      const curRow = state.sim50[state.activeLayer - 1];
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(curX, padT);
+      ctx.lineTo(curX, padT + plotH);
+      ctx.stroke();
+
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(curX, mapY(curRow.y_pid), 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Legend & Labels
+      ctx.font = '10px JetBrains Mono';
+      ctx.fillStyle = '#f43f5e';
+      ctx.fillText('── Open-Loop Drift', padL + 8, padT + 13);
+      ctx.fillStyle = '#06b6d4';
+      ctx.fillText('── PID Stabilized', padL + 132, padT + 13);
+
+      ctx.fillStyle = '#94a3b8';
+      [1, 10, 20, 30, 40, 50].forEach(lv => ctx.fillText(`L${lv}`, mapX(lv) - 8, padT + plotH + 13));
+      [minY + 5, state.targetSetpoint, maxY - 5].forEach(yv => {
+        ctx.fillText(`${yv.toFixed(0)}`, 8, mapY(yv) + 3);
+      });
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText('Layer Index n (1..50) — Click to Scrub Layer', padL + plotW / 2 - 110, h - 4);
+    }
+
+    // GRAPH 2: Dual-Actuator Dynamic Modulation P_mod(n) & v_s,mod(n)
+    function renderGraph2() {
+      const setup = setupHiDPICanvas('canvasGraph2');
+      if (!setup) return;
+      const { ctx, w, h } = setup;
+      ctx.clearRect(0, 0, w, h);
+
+      const padL = 44, padR = 44, padT = 16, padB = 30;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+      drawDSPGrid(ctx, padL, padT, plotW, plotH, 5, 4);
+
+      const mapX = n => padL + ((n - 1) / 49) * plotW;
+
+      const pVals = state.sim50.map(r => r.P_mod);
+      const vVals = state.sim50.map(r => r.vs_mod);
+      const minP = Math.min(...pVals) * 0.92, maxP = Math.max(...pVals) * 1.08 + 1;
+      const minV = Math.min(...vVals) * 0.92, maxV = Math.max(...vVals) * 1.08 + 10;
+
+      const mapYP = p => padT + plotH - ((p - minP) / (maxP - minP)) * plotH;
+      const mapYV = v => padT + plotH - ((v - minV) / (maxV - minV)) * plotH;
+
+      // Modulated Power Curve (Left Axis - Cyan)
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      state.sim50.forEach((row, i) => {
+        const px = mapX(row.layer), py = mapYP(row.P_mod);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Modulated Scan Speed Curve (Right Axis - Amber)
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      state.sim50.forEach((row, i) => {
+        const px = mapX(row.layer), py = mapYV(row.vs_mod);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Active Layer Cursor
+      const curX = mapX(state.activeLayer);
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(curX, padT);
+      ctx.lineTo(curX, padT + plotH);
+      ctx.stroke();
+
+      ctx.font = '10px JetBrains Mono';
+      ctx.fillStyle = '#06b6d4';
+      ctx.fillText(`── Power P(n) [${state.mode === 'SLA' ? 'mW' : 'W'}]`, padL + 8, padT + 13);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillText('── Speed vs(n) [mm/s]', padL + 150, padT + 13);
+
+      ctx.fillStyle = '#06b6d4';
+      ctx.fillText(maxP.toFixed(0), 8, padT + 10);
+      ctx.fillText(minP.toFixed(0), 8, padT + plotH);
+
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillText(maxV.toFixed(0), padL + plotW + 4, padT + 10);
+      ctx.fillText(minV.toFixed(0), padL + plotW + 4, padT + plotH);
+
+      ctx.fillStyle = '#94a3b8';
+      [1, 10, 20, 30, 40, 50].forEach(lv => ctx.fillText(`L${lv}`, mapX(lv) - 8, padT + plotH + 13));
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText(`Coordinated Split α = ${(state.splitRatio * 100).toFixed(0)}% Power / ${((1 - state.splitRatio) * 100).toFixed(0)}% Speed`, padL + plotW / 2 - 120, h - 4);
+    }
+
+    // GRAPH 3: SLA Jacobs Working Curves / SLS Rosenthal Curves with Live PID Operating Point
+    function renderGraph3() {
+      const setup = setupHiDPICanvas('canvasGraph3');
+      if (!setup) return;
+      const { ctx, w, h } = setup;
+      ctx.clearRect(0, 0, w, h);
+
+      const padL = 44, padR = 14, padT = 16, padB = 30;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+      drawDSPGrid(ctx, padL, padT, plotW, plotH, 5, 4);
+
+      const curRow = state.sim50[state.activeLayer - 1];
+
+      if (state.mode === 'SLA') {
+        const minE = 8, maxE = 200, maxCd = 420;
+        const mapX = E => padL + ((Math.log10(E) - Math.log10(minE)) / (Math.log10(maxE) - Math.log10(minE))) * plotW;
+        const mapY = cd => padT + plotH - Math.min(1, Math.max(0, cd / maxCd)) * plotH;
+
+        SLA_MATERIALS.forEach((mat, idx) => {
+          ctx.strokeStyle = mat.color;
+          ctx.lineWidth = idx === state.materialIndex ? 2.5 : 1.2;
+          ctx.beginPath();
+          for (let i = 0; i <= 50; i++) {
+            const E = minE * Math.pow(maxE / minE, i / 50);
+            const cd = Math.max(0, mat.Dp * Math.log(Math.max(1, E / mat.Ec)));
+            const px = mapX(E), py = mapY(cd);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+        });
+
+        // Target Setpoint Horizontal Line
+        const ySet = mapY(state.targetSetpoint);
+        ctx.strokeStyle = '#10b981';
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(padL, ySet);
+        ctx.lineTo(padL + plotW, ySet);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Plot PID-Locked Operating Point (Emerald/Yellow)
+        const pidX = mapX(Math.max(minE, Math.min(maxE, curRow.E_max)));
+        const pidY = mapY(curRow.y_pid);
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(pidX, pidY, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Plot Uncompensated Open-Loop Point (Rose)
+        const olY = mapY(curRow.y_ol);
+        ctx.fillStyle = '#f43f5e';
+        ctx.beginPath();
+        ctx.arc(pidX + 8, olY, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = '10px JetBrains Mono';
+        ctx.fillStyle = '#94a3b8';
+        [10, 25, 50, 100, 200].forEach(ev => ctx.fillText(`${ev}`, mapX(ev) - 10, padT + plotH + 13));
+        [0, 145, 300, 400].forEach(cv => ctx.fillText(`${cv}`, 8, mapY(cv) + 3));
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText('Exposure E_max (mJ/cm² - Log Scale)', padL + plotW / 2 - 95, h - 4);
+      } else {
+        const minV = 1500, maxV = 6500, maxDm = 240;
+        const mapX = v => padL + ((v - minV) / (maxV - minV)) * plotW;
+        const mapY = dm => padT + plotH - Math.min(1, Math.max(0, dm / maxDm)) * plotH;
+
+        SLS_MATERIALS.forEach((mat, idx) => {
+          ctx.strokeStyle = mat.color;
+          ctx.lineWidth = idx === state.materialIndex ? 2.5 : 1.2;
+          const Hv = mat.rho * (mat.cp * (mat.Tm - mat.T0) + mat.Lf);
+          ctx.beginPath();
+          for (let i = 0; i <= 50; i++) {
+            const v_mms = minV + (i / 50) * (maxV - minV);
+            const dm = Math.sqrt((2 * mat.alphaA * curRow.P_mod) / (Math.PI * Math.E * Hv * (v_mms / 1000))) * 1e6;
+            const px = mapX(v_mms), py = mapY(dm);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+        });
+
+        const pidX = mapX(Math.max(minV, Math.min(maxV, curRow.vs_mod)));
+        const pidY = mapY(curRow.y_pid);
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(pidX, pidY, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#f43f5e';
+        ctx.beginPath();
+        ctx.arc(mapX(state.baseSpeed), mapY(curRow.y_ol), 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = '10px JetBrains Mono';
+        ctx.fillStyle = '#94a3b8';
+        [1500, 3000, 4500, 6000].forEach(vv => ctx.fillText(`${vv}`, mapX(vv) - 14, padT + plotH + 13));
+        [0, 100, 135, 200].forEach(dv => ctx.fillText(`${dv}`, 8, mapY(dv) + 3));
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText('Galvo Scan Speed v_s (mm/s)', padL + plotW / 2 - 80, h - 4);
+      }
+    }
+
+    // GRAPH 4: Spatial Cure Profile Cd(y) / Rosenthal Melt Contour at Active Layer n
+    function renderGraph4() {
+      const setup = setupHiDPICanvas('canvasGraph4');
+      if (!setup) return;
+      const { ctx, w, h } = setup;
+      ctx.clearRect(0, 0, w, h);
+
+      const padL = 44, padR = 14, padT = 16, padB = 30;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+      drawDSPGrid(ctx, padL, padT, plotW, plotH, 6, 4);
+
+      const curRow = state.sim50[state.activeLayer - 1];
+      const maxZ = 240, maxY = 220;
+      const mapX = y => padL + ((y + maxY) / (2 * maxY)) * plotW;
+      const mapZ = z => padT + (z / maxZ) * plotH;
+
+      // Target Setpoint Line
+      const setLineY = mapZ(state.targetSetpoint);
+      ctx.strokeStyle = '#10b981';
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(padL, setLineY);
+      ctx.lineTo(padL + plotW, setLineY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Uncompensated Open-Loop Ghost Contour (Red Dashed)
+      const halfW = curRow.width_um / 2;
+      ctx.strokeStyle = '#f43f5e';
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      for (let i = 0; i <= 60; i++) {
+        const yLoc = -halfW + (i / 60) * (2 * halfW);
+        const zVal = Math.max(0, curRow.y_ol * (1 - Math.pow(yLoc / Math.max(1, halfW), 2)));
+        const px = mapX(yLoc), pz = mapZ(zVal);
+        if (i === 0) ctx.moveTo(px, padT);
+        ctx.lineTo(px, pz);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Multi-Hatch PID-Stabilized Contours (-hs, 0, +hs)
+      const hs_um = state.hatchSpacing;
+      [-hs_um, 0, hs_um].forEach((offset, idx) => {
+        ctx.beginPath();
+        for (let i = 0; i <= 60; i++) {
+          const yLoc = -halfW + (i / 60) * (2 * halfW);
+          const zVal = Math.max(0, curRow.y_pid * (1 - Math.pow(yLoc / Math.max(1, halfW), 2)));
+          const px = mapX(yLoc + offset), pz = mapZ(zVal);
+          if (i === 0) ctx.moveTo(px, padT);
+          ctx.lineTo(px, pz);
+        }
+        ctx.closePath();
+        ctx.fillStyle = idx === 1 ? 'rgba(6, 182, 212, 0.36)' : 'rgba(148, 163, 184, 0.14)';
+        ctx.fill();
+        ctx.strokeStyle = idx === 1 ? '#06b6d4' : '#64748b';
+        ctx.lineWidth = idx === 1 ? 2.2 : 1.1;
+        ctx.stroke();
+      });
+
+      ctx.font = '10px JetBrains Mono';
+      ctx.fillStyle = '#10b981';
+      ctx.fillText(`Setpoint = ${state.targetSetpoint.toFixed(0)} µm`, padL + 8, setLineY - 4);
+      ctx.fillStyle = '#94a3b8';
+      [-200, -100, 0, 100, 200].forEach(yv => ctx.fillText(`${yv}`, mapX(yv) - 10, padT + plotH + 13));
+      [0, 100, 145, 220].forEach(zv => ctx.fillText(`${zv}`, 8, mapZ(zv) + 3));
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText('Lateral Track Coordinate y (µm) — PID vs Open-Loop Depth', padL + plotW / 2 - 140, h - 4);
+    }
+
+    // GRAPH 5: 6-DOF Robot Joint Trajectories & Manipulability Across 50 Layers
+    function renderGraph5() {
+      const setup = setupHiDPICanvas('canvasGraph5');
+      if (!setup) return;
+      const { ctx, w, h } = setup;
+      ctx.clearRect(0, 0, w, h);
+
+      const padL = 44, padR = 14, padT = 16, padB = 30;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+      drawDSPGrid(ctx, padL, padT, plotW, plotH, 5, 4);
+
+      const mapX = lay => padL + ((lay - 1) / 49) * plotW;
+      const mapY = deg => padT + plotH / 2 - (deg / 95) * (plotH / 2);
+
+      const colors = ['#06b6d4', '#f97316', '#10b981', '#a855f7', '#eab308'];
+      const baseAngles = state.jointAnglesDeg;
+
+      [0, 1, 2, 4, 5].forEach((jIdx, cIdx) => {
+        ctx.strokeStyle = colors[cIdx];
+        ctx.lineWidth = 1.7;
+        ctx.beginPath();
+        for (let lay = 1; lay <= 50; lay++) {
+          const mod = 6.0 * Math.sin((lay / 50) * Math.PI * 4 + jIdx) + (lay - state.activeLayer) * 0.14;
+          const px = mapX(lay), py = mapY(baseAngles[jIdx] + mod);
+          if (lay === 1) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      });
+
+      const curX = mapX(state.activeLayer);
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(curX, padT);
+      ctx.lineTo(curX, padT + plotH);
+      ctx.stroke();
+
+      ctx.font = '10px JetBrains Mono';
+      ctx.fillStyle = '#94a3b8';
+      [1, 10, 20, 30, 40, 50].forEach(lv => ctx.fillText(`L${lv}`, mapX(lv) - 8, padT + plotH + 13));
+      [-80, -40, 0, 40, 80].forEach(dv => ctx.fillText(`${dv}°`, 8, mapY(dv) + 3));
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText(`6-DOF Joint Angles θ₁..θ₆ | Standoff d_hold = ${state.standoffDist.toFixed(0)} mm`, padL + plotW / 2 - 135, h - 4);
+    }
+
+    // GRAPH 6: 2D RSM Quadratic Response Surface Contour + Live 50-Layer PID Trajectory
+    function renderGraph6() {
+      const setup = setupHiDPICanvas('canvasGraph6');
+      if (!setup) return;
+      const { ctx, w, h } = setup;
+      ctx.clearRect(0, 0, w, h);
+
+      const padL = 44, padR = 14, padT = 16, padB = 30;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+
+      const cols = 34, rows = 20;
+      const cellW = plotW / cols, cellH = plotH / rows;
+
+      const minV = state.mode === 'SLA' ? 800 : 1500;
+      const maxV = state.mode === 'SLA' ? 7500 : 6500;
+      const minP = state.mode === 'SLA' ? 30 : 10;
+      const maxP = state.mode === 'SLA' ? 120 : 30;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const u = c / (cols - 1);
+          const v = 1 - r / (rows - 1);
+          const P = minP + v * (maxP - minP);
+          const spd = minV + u * (maxV - minV);
+
+          let depth = 145;
+          if (state.mode === 'SLA') {
+            depth = evalSLACureDepth(SLA_MATERIALS[state.materialIndex], P, spd, 1, false).Cd_um;
+          } else {
+            depth = evalSLSMeltDepth(SLS_MATERIALS[state.materialIndex], P, spd, 1, false).dm_um;
+          }
+          const normVal = Math.max(0, Math.min(1, (depth - 80) / 180));
+          const hue = (1 - normVal) * 210;
+          ctx.fillStyle = `hsla(${hue}, 80%, 42%, 0.85)`;
+          ctx.fillRect(padL + c * cellW, padT + r * cellH, Math.ceil(cellW), Math.ceil(cellH));
+        }
+      }
+
+      ctx.strokeStyle = '#334155';
+      ctx.strokeRect(padL, padT, plotW, plotH);
+
+      const mapX = spd => padL + Math.max(0, Math.min(1, (spd - minV) / (maxV - minV))) * plotW;
+      const mapY = p => padT + (1 - Math.max(0, Math.min(1, (p - minP) / (maxP - minP)))) * plotH;
+
+      // Plot 50-Layer PID Migration Trajectory across the RSM Surface
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      state.sim50.forEach((row, i) => {
+        const px = mapX(row.vs_mod), py = mapY(row.P_mod);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Current Layer Marker
+      const curRow = state.sim50[state.activeLayer - 1];
+      const curX = mapX(curRow.vs_mod), curY = mapY(curRow.P_mod);
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.arc(curX, curY, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      ctx.font = '10px JetBrains Mono';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`${minV}`, padL + 2, padT + plotH + 13);
+      ctx.fillText(`Scan Speed v_s (${maxV} mm/s) →`, padL + plotW - 155, padT + plotH + 13);
+      ctx.fillText(`${maxP}`, 8, padT + 10);
+      ctx.fillText(`${minP}`, 8, padT + plotH);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText('RSM Surface Contour — White Path = 50-Layer PID Lock', padL + plotW / 2 - 140, h - 4);
+    }
+
+    function bindGraphScrubInteraction() {
+      ['canvasGraph1', 'canvasGraph2', 'canvasGraph5'].forEach(id => {
+        const c = document.getElementById(id);
+        if (!c) return;
+        c.addEventListener('click', e => {
+          const rect = c.getBoundingClientRect();
+          const padL = 44, padR = id === 'canvasGraph2' ? 44 : 14;
+          const u = (e.clientX - rect.left - padL) / Math.max(1, rect.width - padL - padR);
+          const clickedLayer = Math.max(1, Math.min(50, Math.round(1 + u * 49)));
+          onLayerScrub(clickedLayer);
+        });
+        c.addEventListener('mousemove', e => {
+          const rect = c.getBoundingClientRect();
+          const padL = 44, padR = id === 'canvasGraph2' ? 44 : 14;
+          const u = (e.clientX - rect.left - padL) / Math.max(1, rect.width - padL - padR);
+          const hovLayer = Math.max(1, Math.min(50, Math.round(1 + u * 49)));
+          const row = state.sim50[hovLayer - 1];
+          if (row) {
+            document.getElementById('dspHoverReadout').textContent =
+              `Hover Layer n = ${hovLayer}/50 | PID: ${row.y_pid.toFixed(1)} µm | OL Drift: ${row.y_ol.toFixed(1)} µm | P(n)=${row.P_mod.toFixed(1)} | vs(n)=${row.vs_mod.toFixed(0)} mm/s`;
+          }
+        });
+      });
+    }
+
+    /*************************************************************************
+     * 8. UI CONTROLS, PID AUTO-TUNING & DISTURBANCE INJECTION
+     *************************************************************************/
+    function populateMaterialSelect() {
+      const sel = document.getElementById('materialSelect');
+      sel.innerHTML = '';
+      const list = state.mode === 'SLA' ? SLA_MATERIALS : SLS_MATERIALS;
+      list.forEach((m, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.textContent = m.name;
+        sel.appendChild(opt);
+      });
+      sel.value = state.materialIndex;
+    }
+
+    function calibrateBaseSpeedForSetpoint() {
+      // Automatically sets baseSpeed so Layer 1 open-loop starts right at targetSetpoint
+      if (state.mode === 'SLA') {
+        const mat = SLA_MATERIALS[state.materialIndex];
+        const W0_cm = 0.00425;
+        const E_req = mat.Ec * Math.exp(state.targetSetpoint / mat.Dp);
+        const v_opt = Math.round((Math.sqrt(2 / Math.PI) * (state.basePower / (W0_cm * E_req))) * 10.0);
+        state.baseSpeed = Math.max(800, Math.min(7500, v_opt));
+        document.getElementById('sliderSpeed').value = state.baseSpeed;
+      } else {
+        const mat = SLS_MATERIALS[state.materialIndex];
+        const Hv = mat.rho * (mat.cp * (mat.Tm - mat.T0) + mat.Lf);
+        const dm_m = state.targetSetpoint * 1e-6;
+        const v_ms = (2 * mat.alphaA * state.basePower) / (Math.PI * Math.E * Hv * dm_m * dm_m);
+        state.baseSpeed = Math.max(1500, Math.min(6500, Math.round(v_ms * 1000)));
+        document.getElementById('sliderSpeed').value = state.baseSpeed;
+      }
+    }
+
+    function switchMode(newMode) {
+      state.mode = newMode;
+      state.materialIndex = 0;
+
+      const btnSLA = document.getElementById('btnModeSLA');
+      const btnSLS = document.getElementById('btnModeSLS');
+
+      if (newMode === 'SLA') {
+        btnSLA.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/25';
+        btnSLS.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 text-slate-400 hover:text-white';
+
+        state.targetSetpoint = 145.0;
+        const sSet = document.getElementById('sliderSetpoint');
+        sSet.min = 110; sSet.max = 220; sSet.value = 145;
+
+        const sPow = document.getElementById('sliderPower');
+        sPow.min = 30; sPow.max = 120; sPow.step = 0.5; sPow.value = 65.0;
+        state.basePower = 65.0;
+
+        const sSpd = document.getElementById('sliderSpeed');
+        sSpd.min = 800; sSpd.max = 7500; sSpd.step = 25;
+
+        document.getElementById('sliderLayerThick').value = 100;
+        document.getElementById('sliderHatch').value = 85;
+        state.layerThickness = 100;
+        state.hatchSpacing = 85;
+      } else {
+        btnSLS.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 bg-orange-500 text-slate-950 shadow-lg shadow-orange-500/25';
+        btnSLA.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 text-slate-400 hover:text-white';
+
+        state.targetSetpoint = 135.0;
+        const sSet = document.getElementById('sliderSetpoint');
+        sSet.min = 100; sSet.max = 190; sSet.value = 135;
+
+        const sPow = document.getElementById('sliderPower');
+        sPow.min = 10; sPow.max = 30; sPow.step = 0.5; sPow.value = 18.5;
+        state.basePower = 18.5;
+
+        const sSpd = document.getElementById('sliderSpeed');
+        sSpd.min = 1500; sSpd.max = 6500; sSpd.step = 25;
+
+        document.getElementById('sliderLayerThick').value = 110;
+        document.getElementById('sliderHatch').value = 200;
+        state.layerThickness = 110;
+        state.hatchSpacing = 200;
+      }
+
+      populateMaterialSelect();
+      calibrateBaseSpeedForSetpoint();
+      run50LayerPIDSimulation();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+    }
+
+    function setControlLoopMode(isClosedLoop) {
+      state.closedLoopPID = isClosedLoop;
+      const bClosed = document.getElementById('btnLoopClosed');
+      const bOpen = document.getElementById('btnLoopOpen');
+      if (isClosedLoop) {
+        bClosed.className = 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500 text-slate-950 shadow transition';
+        bOpen.className = 'px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white transition';
+      } else {
+        bOpen.className = 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-500 text-white shadow transition';
+        bClosed.className = 'px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white transition';
+      }
+      run50LayerPIDSimulation();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+    }
+
+    function onMaterialChange(idx) {
+      state.materialIndex = parseInt(idx, 10) || 0;
+      calibrateBaseSpeedForSetpoint();
+      run50LayerPIDSimulation();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+    }
+
+    function onPIDParameterInput() {
+      state.targetSetpoint = parseFloat(document.getElementById('sliderSetpoint').value);
+      state.splitRatio = parseFloat(document.getElementById('sliderSplitRatio').value);
+      state.Kp = parseFloat(document.getElementById('sliderKp').value);
+      state.Ki = parseFloat(document.getElementById('sliderKi').value);
+      state.Kd = parseFloat(document.getElementById('sliderKd').value);
+      state.basePower = parseFloat(document.getElementById('sliderPower').value);
+      state.baseSpeed = parseFloat(document.getElementById('sliderSpeed').value);
+      state.layerThickness = parseFloat(document.getElementById('sliderLayerThick').value);
+      state.hatchSpacing = parseFloat(document.getElementById('sliderHatch').value);
+      state.standoffDist = parseFloat(document.getElementById('sliderStandoff').value);
+
+      run50LayerPIDSimulation();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+    }
+
+    function loadOptimalBasePreset() {
+      calibrateBaseSpeedForSetpoint();
+      run50LayerPIDSimulation();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+      showToast(`Calibrated base scan speed (${state.baseSpeed} mm/s) for target ${state.targetSetpoint} µm.`);
+    }
+
+    function injectDisturbanceSurge() {
+      state.disturbanceSurgeActive = true;
+      state.disturbanceLayerStart = Math.min(36, Math.max(5, state.activeLayer));
+      run50LayerPIDSimulation();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+      showToast(`Injected +15% thermal/optical surge at Layers ${state.disturbanceLayerStart}–${state.disturbanceLayerStart + 10}!`);
+    }
+
+    function clearDisturbanceSurge() {
+      state.disturbanceSurgeActive = false;
+      run50LayerPIDSimulation();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+      showToast('Cleared thermal/optical disturbance surge.');
+    }
+
+    function autoTunePIDGains() {
+      // Internal Model Control (IMC) / Ziegler-Nichols optimal discrete gains
+      state.Kp = state.mode === 'SLA' ? 0.90 : 0.95;
+      state.Ki = state.mode === 'SLA' ? 0.46 : 0.48;
+      state.Kd = state.mode === 'SLA' ? 0.14 : 0.16;
+      state.splitRatio = 0.65;
+
+      document.getElementById('sliderKp').value = state.Kp;
+      document.getElementById('sliderKi').value = state.Ki;
+      document.getElementById('sliderKd').value = state.Kd;
+      document.getElementById('sliderSplitRatio').value = state.splitRatio;
+
+      calibrateBaseSpeedForSetpoint();
+      run50LayerPIDSimulation();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+      showToast(`Auto-tuned IMC/Z-N PID gains: Kp=${state.Kp}, Ki=${state.Ki}, Kd=${state.Kd}`);
+    }
+
+    function updateUIReadouts() {
+      if (state.sim50.length === 0) return;
+      const cur = state.sim50[state.activeLayer - 1];
+      const partZ = (state.activeLayer * state.layerThickness) / 1000.0;
+
+      // Header Badge
+      const hdrBadge = document.getElementById('pidHeaderBadge');
+      if (state.closedLoopPID) {
+        hdrBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 mono';
+        hdrBadge.textContent = `● DUAL-ACTUATOR PID LOCKED (${state.mode === 'SLA' ? 'Cd*' : 'dm*'} = ${state.targetSetpoint.toFixed(1)} µm | RMSE = ${state.rmsePID.toFixed(2)} µm)`;
+      } else {
+        hdrBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 mono';
+        hdrBadge.textContent = `⚠ OPEN-LOOP UNCOMPENSATED DRIFT (RMSE = ${state.rmseOpenLoop.toFixed(2)} µm)`;
+      }
+
+      // Top-Left HUD
+      document.getElementById('hudStationTitle').textContent = state.mode === 'SLA'
+        ? 'FORMLABS FORM 4L / 3L (SLA STATION)'
+        : 'FORMLABS FUSE 1+ 30W (SLS STATION)';
+      document.getElementById('hudSensorBadge').textContent = state.mode === 'SLA'
+        ? 'Coaxial OCT Sensor (405 nm)'
+        : 'Coaxial NIR Pyrometer (1070 nm)';
+      document.getElementById('hudLayerNum').textContent = `${state.activeLayer} / 50`;
+      document.getElementById('hudPartZ').textContent = `${partZ.toFixed(2)} mm`;
+      document.getElementById('hudStandoff').textContent = `${state.standoffDist.toFixed(1)} mm`;
+      document.getElementById('hudTCP').textContent = `(${state.tcpPos.x.toFixed(0)}, ${state.tcpPos.y.toFixed(0)}, ${state.tcpPos.z.toFixed(0)})`;
+      document.getElementById('hudTargetLabel').textContent = state.mode === 'SLA' ? 'Setpoint Cd*:' : 'Setpoint dm*:';
+      document.getElementById('hudTargetVal').textContent = `${state.targetSetpoint.toFixed(1)} µm`;
+      document.getElementById('hudMeasLabel').textContent = state.mode === 'SLA' ? 'Measured Cd(n):' : 'Measured dm(n):';
+      document.getElementById('hudMeasVal').textContent = `${cur.y_pid.toFixed(1)} µm`;
+      document.getElementById('hudModPower').textContent = state.mode === 'SLA' ? `${cur.P_mod.toFixed(1)} mW` : `${cur.P_mod.toFixed(2)} W`;
+      document.getElementById('hudModSpeed').textContent = `${cur.vs_mod.toFixed(0)} mm/s`;
+
+      // Sliders Readouts
+      document.getElementById('labelSetpoint').textContent = state.mode === 'SLA' ? 'Target Cure Depth (Cd*)' : 'Target Melt Depth (dm*)';
+      document.getElementById('valSetpoint').textContent = `${state.targetSetpoint.toFixed(1)} µm`;
+      document.getElementById('valSplitRatio').textContent = `${(state.splitRatio * 100).toFixed(0)}% P / ${((1 - state.splitRatio) * 100).toFixed(0)}% v_s`;
+      document.getElementById('valKp').textContent = state.Kp.toFixed(2);
+      document.getElementById('valKi').textContent = state.Ki.toFixed(2);
+      document.getElementById('valKd').textContent = state.Kd.toFixed(2);
+      document.getElementById('valPower').textContent = state.mode === 'SLA' ? `${state.basePower.toFixed(1)} mW` : `${state.basePower.toFixed(1)} W`;
+      document.getElementById('valSpeed').textContent = `${state.baseSpeed.toFixed(0)} mm/s`;
+      document.getElementById('valLayerThick').textContent = `${state.layerThickness.toFixed(0)} µm`;
+      document.getElementById('valHatch').textContent = `${state.hatchSpacing.toFixed(0)} µm`;
+      document.getElementById('valStandoff').textContent = `${state.standoffDist.toFixed(1)} mm`;
+
+      // Timeline
+      document.getElementById('timelineLayerLabel').textContent = `${state.activeLayer} / 50`;
+      document.getElementById('timelineThermalLabel').textContent = `+${cur.dT.toFixed(2)} °C`;
+      document.getElementById('timelineElapsedLabel').textContent = `${cur.t_cum.toFixed(1)} s`;
+
+      // 6-DOF Joint Readouts
+      for (let i = 0; i < 6; i++) {
+        const val = state.jointAnglesDeg[i];
+        document.getElementById(`jointVal${i + 1}`).textContent = `${val >= 0 ? '+' : ''}${val.toFixed(1)}°`;
+      }
+      document.getElementById('manipVal').textContent = state.manipulability.toFixed(3);
+
+      // Material Box & KPI Cards
+      const propsBox = document.getElementById('materialPropsBox');
+      if (state.mode === 'SLA') {
+        const mat = SLA_MATERIALS[state.materialIndex];
+        propsBox.innerHTML = `
+          <div><span class="text-slate-400">Dp:</span> <span class="text-cyan-300 font-bold">${mat.Dp}µm</span></div>
+          <div><span class="text-slate-400">Ec:</span> <span class="text-cyan-300 font-bold">${mat.Ec}</span></div>
+          <div><span class="text-slate-400">μ:</span> <span class="text-white">${mat.visc}cP</span></div>
+        `;
+      } else {
+        const mat = SLS_MATERIALS[state.materialIndex];
+        propsBox.innerHTML = `
+          <div><span class="text-slate-400">Tm:</span> <span class="text-orange-400 font-bold">${mat.Tm}°C</span></div>
+          <div><span class="text-slate-400">T0:</span> <span class="text-orange-400 font-bold">${mat.T0}°C</span></div>
+          <div><span class="text-slate-400">Lf:</span> <span class="text-white">${(mat.Lf/1000).toFixed(0)}kJ</span></div>
+        `;
+      }
+
+      document.getElementById('qualityStatusBadge').textContent = `50-Layer RMSE = ${state.rmsePID.toFixed(2)} µm`;
+      document.getElementById('kpi1Val').textContent = `${cur.y_pid.toFixed(1)} / ${state.targetSetpoint.toFixed(1)} µm`;
+      document.getElementById('kpi2Val').textContent = `${cur.y_ol.toFixed(1)} µm (+${(cur.y_ol - state.targetSetpoint).toFixed(1)})`;
+      document.getElementById('kpi3Val').textContent = state.mode === 'SLA' ? `${cur.P_mod.toFixed(1)} mW` : `${cur.P_mod.toFixed(2)} W`;
+      document.getElementById('kpi4Val').textContent = `${cur.vs_mod.toFixed(0)} mm/s`;
+      document.getElementById('kpi5Val').textContent = `${cur.err >= 0 ? '+' : ''}${cur.err.toFixed(2)} µm`;
+      document.getElementById('kpi6Val').textContent = `${state.rmsePID.toFixed(2)} µm`;
+      document.getElementById('kpi7Val').textContent = `${state.driftReductionPct.toFixed(1)}% Reduced`;
+      document.getElementById('kpi8Val').textContent = `${cur.width_um.toFixed(1)} µm`;
+    }
+
+    /*************************************************************************
+     * 9. PLAYBACK CONTROLS & ANIMATION LOOP
+     *************************************************************************/
+    function togglePlayAnimation() {
+      state.isPlaying = !state.isPlaying;
+      document.getElementById('playPauseIcon').textContent = state.isPlaying ? '❚❚' : '▶';
+      document.getElementById('playPauseText').textContent = state.isPlaying ? 'Pause Print' : 'Play Print';
+    }
+
+    function stepSingleLayer(delta) {
+      state.activeLayer = Math.max(1, Math.min(50, state.activeLayer + delta));
+      document.getElementById('sliderLayer').value = state.activeLayer;
+      updateRobotPoseForCurrentState();
+      updateUIReadouts();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+    }
+
+    function resetPrintSimulation() {
+      state.activeLayer = 1;
+      state.intraLayerProgress = 0.0;
+      document.getElementById('sliderLayer').value = 1;
+      updateRobotPoseForCurrentState();
+      updateUIReadouts();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+    }
+
+    function onLayerScrub(val) {
+      state.activeLayer = parseInt(val, 10) || 1;
+      document.getElementById('sliderLayer').value = state.activeLayer;
+      updateRobotPoseForCurrentState();
+      updateUIReadouts();
+      rebuildCylinderLayers3D();
+      renderAll6Graphs();
+    }
+
+    function updateSimSpeed(val) {
+      state.simSpeed = parseFloat(val) || 1.0;
+    }
+
+    function animateDigitalTwin() {
+      requestAnimationFrame(animateDigitalTwin);
+
+      if (state.isPlaying) {
+        state.intraLayerProgress += 0.009 * state.simSpeed;
+        if (state.intraLayerProgress >= 1.0) {
+          state.intraLayerProgress = 0.0;
+          state.activeLayer = state.activeLayer < 50 ? state.activeLayer + 1 : 1;
+          document.getElementById('sliderLayer').value = state.activeLayer;
+          updateRobotPoseForCurrentState();
+          updateUIReadouts();
+          rebuildCylinderLayers3D();
+          renderAll6Graphs();
+        }
+      }
+
+      if (state.transferAnimationActive) {
+        state.transferPhase += 0.012;
+        if (state.transferPhase >= 1.0) {
+          state.transferAnimationActive = false;
+          state.transferPhase = 0.0;
+        }
+        updateRobotPoseForCurrentState();
+        updateUIReadouts();
+      }
+
+      updateThreeJSScene();
+      renderPiPSlicer();
+    }
+
+    /*************************************************************************
+     * 10. SNAPSHOT EXPORT, 50-LAYER PID CSV & SEPARATE FILE DOWNLOADERS
+     *************************************************************************/
+    function showToast(msg) {
+      const t = document.getElementById('toastBanner');
+      t.textContent = msg;
+      t.classList.remove('hidden');
+      setTimeout(() => t.classList.add('hidden'), 3400);
+    }
+
+    function captureCompositePaperFigure() {
+      updateThreeJSScene();
+      const link = document.createElement('a');
+      link.download = `Robotic_${state.mode}_PID_DigitalTwin_Layer${state.activeLayer}.png`;
+      link.href = renderer.domElement.toDataURL('image/png');
+      link.click();
+      showToast(`Exported PNG Snapshot (${state.mode} Mode, Layer ${state.activeLayer}/50)`);
+    }
+
+    function exportTelemetryCSV() {
+      let csv = 'Layer,Mode,ControlLoop,Setpoint_um,PID_Depth_um,OpenLoop_Depth_um,Error_um,Modulated_Power,Modulated_ScanSpeed_mms,ThermalAccum_dT_C,Width_um,CumulativeTime_s\n';
+      state.sim50.forEach(r => {
+        csv += `${r.layer},${state.mode},${state.closedLoopPID ? 'ClosedLoop_PID' : 'OpenLoop'},${r.setpoint.toFixed(2)},${r.y_pid.toFixed(2)},${r.y_ol.toFixed(2)},${r.err.toFixed(3)},${r.P_mod.toFixed(2)},${r.vs_mod.toFixed(1)},${r.dT.toFixed(2)},${r.width_um.toFixed(2)},${r.t_cum.toFixed(2)}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `Robotic_${state.mode}_50Layer_PID_Verification.csv`;
+      link.click();
+      showToast('Exported 50-Layer Closed-Loop PID CSV Telemetry!');
+    }
+
+    function openSourceModal() {
+      document.getElementById('sourceModal').classList.remove('hidden');
+    }
+
+    function closeSourceModal() {
+      document.getElementById('sourceModal').classList.add('hidden');
+    }
+
+    function downloadSeparateFile(filename) {
+      let content = '';
+      if (filename === 'styles.css') {
+        content = document.getElementById('digital-twin-styles').innerHTML.trim();
+      } else if (filename === 'digital_twin.js') {
+        content = document.getElementById('digital-twin-script').innerHTML.trim();
+      } else {
+        // Generate clean standalone index.html referencing external styles.css and digital_twin.js
+        const docClone = document.documentElement.cloneNode(true);
+        const styleEl = docClone.querySelector('#digital-twin-styles');
+        if (styleEl) {
+          const linkEl = document.createElement('link');
+          linkEl.rel = 'stylesheet';
+          linkEl.href = 'styles.css';
+          styleEl.replaceWith(linkEl);
+        }
+        const scriptEl = docClone.querySelector('#digital-twin-script');
+        if (scriptEl) {
+          const extScript = document.createElement('script');
+          extScript.src = 'digital_twin.js';
+          scriptEl.replaceWith(extScript);
+        }
+        content = '<!DOCTYPE html>\n' + docClone.outerHTML;
+      }
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      showToast(`Downloaded standalone ${filename}`);
+    }
+
+    /*************************************************************************
+     * 11. INITIALIZATION ON WINDOW LOAD
+     *************************************************************************/
+    window.onload = function () {
+      populateMaterialSelect();
+      calibrateBaseSpeedForSetpoint();
+      run50LayerPIDSimulation();
+      initThreeJS();
+      bindGraphScrubInteraction();
+      renderAll6Graphs();
+      animateDigitalTwin();
+    };
+  </script>
+</body>
+</html>
